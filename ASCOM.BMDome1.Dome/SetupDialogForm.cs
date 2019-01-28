@@ -24,8 +24,7 @@ namespace ASCOM.BMDome1
         {
             // Place any validation constraint checks here
             // Update the state variables with results from the dialogue
-            Dome.comPort = (string)comboBoxComPort.SelectedItem;
-            Dome.tl.Enabled = chkTrace.Checked;
+           
         }
 
         private void cmdCancel_Click(object sender, EventArgs e) // Cancel button event handler
@@ -52,15 +51,37 @@ namespace ASCOM.BMDome1
 
         private void InitUI()
         {
-            chkTrace.Checked = Dome.tl.Enabled;
-            // set the list of com ports to those that are currently available
-            comboBoxComPort.Items.Clear();
-            comboBoxComPort.Items.AddRange(System.IO.Ports.SerialPort.GetPortNames());      // use System.IO because it's static
-            // select the current port if possible
-            if (comboBoxComPort.Items.Contains(Dome.comPort))
-            {
-                comboBoxComPort.SelectedItem = Dome.comPort;
-            }
+            
+        }
+
+        private void label2_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void label5_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void label1_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void label6_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void SetupDialogForm_Load(object sender, EventArgs e)
+        {
+
         }
     }
 }

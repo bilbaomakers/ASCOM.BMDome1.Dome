@@ -4,26 +4,27 @@
 //
 // ASCOM Dome driver for BMDome1
 //
-// Description:	Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam 
-//				nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam 
-//				erat, sed diam voluptua. At vero eos et accusam et justo duo 
-//				dolores et ea rebum. Stet clita kasd gubergren, no sea takimata 
-//				sanctus est Lorem ipsum dolor sit amet.
+// Description:	Driver para controlador de Domo desarrollado por Bilbaomakers
+//				para el proyecto de observatorio astronomico en Marcilla de Campos.
+//				Control de azimut de la cupula y apertura cierre del shutter.
+//				Hardware de control con Arduino y ESP8266
+//				Comunicaciones mediante MQTT
 //
-// Implements:	ASCOM Dome interface version: <To be completed by driver developer>
-// Author:		(XXX) Your N. Here <your@email.here>
+// Implements:	ASCOM Dome interface version: 6.4SP1
+// Author:		Diego Maroto - BilbaoMakers 2019 - info@bilbaomakers.org
 //
 // Edit Log:
 //
 // Date			Who	Vers	Description
 // -----------	---	-----	-------------------------------------------------------
-// dd-mmm-yyyy	XXX	6.0.0	Initial edit, created from ASCOM driver template
+// 28/01/2019	DMF	1.0.0	Creacion del proyecto y la aplicacion de pruebas
 // --------------------------------------------------------------------------------
 //
 
 
-// This is used to define code in the template that is specific to one class implementation
-// unused code canbe deleted and this definition removed.
+// 
+// 
+
 #define Dome
 
 using System;
@@ -43,7 +44,7 @@ using System.Collections;
 namespace ASCOM.BMDome1
 {
     //
-    // Your driver's DeviceID is ASCOM.BMDome1.Dome
+    // DeviceID is ASCOM.BMDome1.Dome
     //
     // The Guid attribute sets the CLSID for ASCOM.BMDome1.Dome
     // The ClassInterface/None addribute prevents an empty interface called
@@ -69,7 +70,11 @@ namespace ASCOM.BMDome1
         /// <summary>
         /// Driver description that displays in the ASCOM Chooser.
         /// </summary>
-        private static string driverDescription = "ASCOM Dome Driver for BMDome1.";
+        private static string driverDescription = "Domo BilbaoMakers Version 1.0.0";
+
+        
+        
+        // Esto quitar que no va con COM
 
         internal static string comPortProfileName = "COM Port"; // Constants used for Profile persistence
         internal static string comPortDefault = "COM1";
@@ -78,10 +83,14 @@ namespace ASCOM.BMDome1
 
         internal static string comPort; // Variables to hold the currrent device configuration
 
+       
+
+
         /// <summary>
-        /// Private variable to hold the connected state
+        /// Variable para almacenar el estado conectado
         /// </summary>
         private bool connectedState;
+
 
         /// <summary>
         /// Private variable to hold an ASCOM Utilities object
@@ -92,6 +101,8 @@ namespace ASCOM.BMDome1
         /// Private variable to hold an ASCOM AstroUtilities object to provide the Range method
         /// </summary>
         private AstroUtils astroUtilities;
+
+
 
         /// <summary>
         /// Variable to hold the trace logger object (creates a diagnostic log file with information that you specify)
@@ -135,7 +146,7 @@ namespace ASCOM.BMDome1
             // consider only showing the setup dialog if not connected
             // or call a different dialog if connected
             if (IsConnected)
-                System.Windows.Forms.MessageBox.Show("Already connected, just press OK");
+                System.Windows.Forms.MessageBox.Show("Estas conectado al domo. Desconectate para configurar");
 
             using (SetupDialogForm F = new SetupDialogForm())
             {
