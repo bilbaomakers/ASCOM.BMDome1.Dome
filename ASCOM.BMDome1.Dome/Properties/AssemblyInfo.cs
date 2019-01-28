@@ -10,9 +10,9 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyTitle("ASCOM.BMDome1.Dome")]
 [assembly: AssemblyDescription("ASCOM Dome driver for BMDome1")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("The ASCOM Initiative")]
+[assembly: AssemblyCompany("BilbaoMakers")]
 [assembly: AssemblyProduct("ASCOM Dome driver for BMDome1")]
-[assembly: AssemblyCopyright("Copyright © 2019 The ASCOM Initiative")]
+[assembly: AssemblyCopyright("GNU V3")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
@@ -35,5 +35,5 @@ using System.Runtime.InteropServices;
 // by using the '*' as shown below:
 //
 // TODO - Set your driver's version here
-[assembly: AssemblyVersion("6.4.0.0")]
-[assembly: AssemblyFileVersion("6.4.0.0")]
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
