@@ -34,17 +34,17 @@ namespace ASCOM.BMDome1
             this.picASCOM = new System.Windows.Forms.PictureBox();
             this.pictureBox1 = new System.Windows.Forms.PictureBox();
             this.groupBox1 = new System.Windows.Forms.GroupBox();
-            this.label2 = new System.Windows.Forms.Label();
-            this.label3 = new System.Windows.Forms.Label();
-            this.label4 = new System.Windows.Forms.Label();
-            this.label5 = new System.Windows.Forms.Label();
-            this.maskedTextBox1 = new System.Windows.Forms.MaskedTextBox();
+            this.maskedTextBox4 = new System.Windows.Forms.MaskedTextBox();
+            this.maskedTextBox3 = new System.Windows.Forms.MaskedTextBox();
             this.maskedTextBox2 = new System.Windows.Forms.MaskedTextBox();
+            this.maskedTextBox1 = new System.Windows.Forms.MaskedTextBox();
+            this.label5 = new System.Windows.Forms.Label();
+            this.label4 = new System.Windows.Forms.Label();
+            this.label3 = new System.Windows.Forms.Label();
+            this.label2 = new System.Windows.Forms.Label();
             this.label1 = new System.Windows.Forms.Label();
             this.CmdPruebaCom = new System.Windows.Forms.Button();
             this.label6 = new System.Windows.Forms.Label();
-            this.maskedTextBox3 = new System.Windows.Forms.MaskedTextBox();
-            this.maskedTextBox4 = new System.Windows.Forms.MaskedTextBox();
             ((System.ComponentModel.ISupportInitialize)(this.picASCOM)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             this.groupBox1.SuspendLayout();
@@ -117,29 +117,35 @@ namespace ASCOM.BMDome1
             this.groupBox1.TabStop = false;
             this.groupBox1.Text = "Servidor MQTT";
             // 
-            // label2
+            // maskedTextBox4
             // 
-            this.label2.Location = new System.Drawing.Point(24, 43);
-            this.label2.Name = "label2";
-            this.label2.Size = new System.Drawing.Size(137, 25);
-            this.label2.TabIndex = 10;
-            this.label2.Text = "Direccion IP:";
+            this.maskedTextBox4.Location = new System.Drawing.Point(155, 146);
+            this.maskedTextBox4.Name = "maskedTextBox4";
+            this.maskedTextBox4.PasswordChar = '*';
+            this.maskedTextBox4.Size = new System.Drawing.Size(149, 29);
+            this.maskedTextBox4.TabIndex = 17;
             // 
-            // label3
+            // maskedTextBox3
             // 
-            this.label3.Location = new System.Drawing.Point(76, 78);
-            this.label3.Name = "label3";
-            this.label3.Size = new System.Drawing.Size(97, 25);
-            this.label3.TabIndex = 11;
-            this.label3.Text = "Puerto:";
+            this.maskedTextBox3.Location = new System.Drawing.Point(155, 111);
+            this.maskedTextBox3.Name = "maskedTextBox3";
+            this.maskedTextBox3.Size = new System.Drawing.Size(149, 29);
+            this.maskedTextBox3.TabIndex = 16;
             // 
-            // label4
+            // maskedTextBox2
             // 
-            this.label4.Location = new System.Drawing.Point(65, 113);
-            this.label4.Name = "label4";
-            this.label4.Size = new System.Drawing.Size(97, 25);
-            this.label4.TabIndex = 12;
-            this.label4.Text = "Usuario:";
+            this.maskedTextBox2.Location = new System.Drawing.Point(155, 76);
+            this.maskedTextBox2.Name = "maskedTextBox2";
+            this.maskedTextBox2.Size = new System.Drawing.Size(149, 29);
+            this.maskedTextBox2.TabIndex = 15;
+            this.maskedTextBox2.Text = "1883";
+            // 
+            // maskedTextBox1
+            // 
+            this.maskedTextBox1.Location = new System.Drawing.Point(155, 41);
+            this.maskedTextBox1.Name = "maskedTextBox1";
+            this.maskedTextBox1.Size = new System.Drawing.Size(149, 29);
+            this.maskedTextBox1.TabIndex = 14;
             // 
             // label5
             // 
@@ -150,21 +156,29 @@ namespace ASCOM.BMDome1
             this.label5.Text = "Contraseña:";
             this.label5.Click += new System.EventHandler(this.label5_Click);
             // 
-            // maskedTextBox1
+            // label4
             // 
-            this.maskedTextBox1.Location = new System.Drawing.Point(155, 41);
-            this.maskedTextBox1.Mask = "###.###.###.###";
-            this.maskedTextBox1.Name = "maskedTextBox1";
-            this.maskedTextBox1.Size = new System.Drawing.Size(149, 29);
-            this.maskedTextBox1.TabIndex = 14;
+            this.label4.Location = new System.Drawing.Point(65, 113);
+            this.label4.Name = "label4";
+            this.label4.Size = new System.Drawing.Size(97, 25);
+            this.label4.TabIndex = 12;
+            this.label4.Text = "Usuario:";
             // 
-            // maskedTextBox2
+            // label3
             // 
-            this.maskedTextBox2.Location = new System.Drawing.Point(155, 76);
-            this.maskedTextBox2.Name = "maskedTextBox2";
-            this.maskedTextBox2.Size = new System.Drawing.Size(149, 29);
-            this.maskedTextBox2.TabIndex = 15;
-            this.maskedTextBox2.Text = "1883";
+            this.label3.Location = new System.Drawing.Point(75, 78);
+            this.label3.Name = "label3";
+            this.label3.Size = new System.Drawing.Size(97, 25);
+            this.label3.TabIndex = 11;
+            this.label3.Text = "Puerto:";
+            // 
+            // label2
+            // 
+            this.label2.Location = new System.Drawing.Point(58, 43);
+            this.label2.Name = "label2";
+            this.label2.Size = new System.Drawing.Size(95, 25);
+            this.label2.TabIndex = 10;
+            this.label2.Text = "Servidor:";
             // 
             // label1
             // 
@@ -195,21 +209,6 @@ namespace ASCOM.BMDome1
             this.label6.TabIndex = 13;
             this.label6.Text = "Bilbaomakers 2019";
             this.label6.Click += new System.EventHandler(this.label6_Click);
-            // 
-            // maskedTextBox3
-            // 
-            this.maskedTextBox3.Location = new System.Drawing.Point(155, 111);
-            this.maskedTextBox3.Name = "maskedTextBox3";
-            this.maskedTextBox3.Size = new System.Drawing.Size(149, 29);
-            this.maskedTextBox3.TabIndex = 16;
-            // 
-            // maskedTextBox4
-            // 
-            this.maskedTextBox4.Location = new System.Drawing.Point(155, 146);
-            this.maskedTextBox4.Name = "maskedTextBox4";
-            this.maskedTextBox4.PasswordChar = '*';
-            this.maskedTextBox4.Size = new System.Drawing.Size(149, 29);
-            this.maskedTextBox4.TabIndex = 17;
             // 
             // SetupDialogForm
             // 
