@@ -41,6 +41,12 @@ using ASCOM.DeviceInterface;
 using System.Globalization;
 using System.Collections;
 
+using MQTTnet;
+using MQTTnet.Client;
+using MQTTnet.Diagnostics;
+
+
+
 namespace ASCOM.BMDome1
 {
     //
@@ -72,18 +78,8 @@ namespace ASCOM.BMDome1
         /// </summary>
         private static string driverDescription = "Domo BilbaoMakers Version 1.0.0";
 
-        
-        
-        // Esto quitar que no va con COM
 
-        internal static string comPortProfileName = "COM Port"; // Constants used for Profile persistence
-        internal static string comPortDefault = "COM1";
-        internal static string traceStateProfileName = "Trace Level";
-        internal static string traceStateDefault = "false";
-
-        internal static string comPort; // Variables to hold the currrent device configuration
-
-       
+        Configuracion miconfiguracion;
 
 
         /// <summary>
@@ -222,6 +218,8 @@ namespace ASCOM.BMDome1
                 LogMessage("Connected", "Get {0}", IsConnected);
                 return IsConnected;
             }
+
+
             set
             {
                 tl.LogMessage("Connected", "Set {0}", value);
@@ -231,13 +229,13 @@ namespace ASCOM.BMDome1
                 if (value)
                 {
                     connectedState = true;
-                    LogMessage("Connected Set", "Connecting to port {0}", comPort);
+                    LogMessage("Connected Set", "Conectando al control");
                     // TODO connect to the device
                 }
                 else
                 {
                     connectedState = false;
-                    LogMessage("Connected Set", "Disconnecting from port {0}", comPort);
+                    LogMessage("Connected Set", "Desconectando del control");
                     // TODO disconnect from the device
                 }
             }
@@ -375,8 +373,8 @@ namespace ASCOM.BMDome1
         {
             get
             {
-                tl.LogMessage("CanSetAzimuth Get", false.ToString());
-                return false;
+                tl.LogMessage("CanSetAzimuth Get", true.ToString());
+                return true;
             }
         }
 
@@ -600,7 +598,7 @@ namespace ASCOM.BMDome1
         /// <summary>
         /// Use this function to throw an exception if we aren't connected to the hardware
         /// </summary>
-        /// <param name="message"></param>
+        /// <param name="message">Mensaje</param>
         private void CheckConnected(string message)
         {
             if (!IsConnected)
@@ -617,8 +615,6 @@ namespace ASCOM.BMDome1
             using (Profile driverProfile = new Profile())
             {
                 driverProfile.DeviceType = "Dome";
-                tl.Enabled = Convert.ToBoolean(driverProfile.GetValue(driverID, traceStateProfileName, string.Empty, traceStateDefault));
-                comPort = driverProfile.GetValue(driverID, comPortProfileName, string.Empty, comPortDefault);
             }
         }
 
@@ -630,8 +626,6 @@ namespace ASCOM.BMDome1
             using (Profile driverProfile = new Profile())
             {
                 driverProfile.DeviceType = "Dome";
-                driverProfile.WriteValue(driverID, traceStateProfileName, tl.Enabled.ToString());
-                driverProfile.WriteValue(driverID, comPortProfileName, comPort.ToString());
             }
         }
 

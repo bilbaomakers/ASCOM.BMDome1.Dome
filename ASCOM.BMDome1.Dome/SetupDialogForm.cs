@@ -19,8 +19,10 @@ namespace ASCOM.BMDome1
     {
 
         Configuracion miconfiguracion;
-
         
+
+        internal static string driverID = "ASCOM.BMDome1.Dome";
+
 
         public SetupDialogForm()
         {
@@ -77,10 +79,14 @@ namespace ASCOM.BMDome1
             this.picASCOM.Click += BrowseToAscom;
             this.picBM.Click += BrowseToBM;
             this.cmdOK.Click += CmdOK_Click;
-            
-            miconfiguracion = Configuracion.Cargar();
 
-            TxtIdCliente.Text = miconfiguracion.IDCliente;
+            // Leer la configuracion del driver
+
+
+
+            miconfiguracion = new Configuracion(driverID);
+
+            TxtIdCliente.Text = miconfiguracion.IdCliente;
             TxtServidor.Text = miconfiguracion.ServidorMQTT;
             TxtPuerto.Text = miconfiguracion.Puerto;
             TxtUsuario.Text = miconfiguracion.Usuario;
@@ -94,7 +100,7 @@ namespace ASCOM.BMDome1
         private void CmdOK_Click(object sender, EventArgs e)
         {
 
-            miconfiguracion.IDCliente = TxtIdCliente.Text;
+            miconfiguracion.IdCliente = TxtIdCliente.Text;
             miconfiguracion.ServidorMQTT = TxtServidor.Text;
             miconfiguracion.Puerto = TxtPuerto.Text;
             miconfiguracion.Usuario = TxtUsuario.Text;
@@ -103,6 +109,7 @@ namespace ASCOM.BMDome1
 
             miconfiguracion.Guardar();
             
+                        
         }
 
         private void CmdPruebaCom_Click(object sender, EventArgs e)
@@ -162,6 +169,6 @@ namespace ASCOM.BMDome1
 
         }
 
-        
+
     }
 }

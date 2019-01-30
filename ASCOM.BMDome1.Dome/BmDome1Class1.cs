@@ -5,6 +5,8 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Reflection;
 
+
+
 namespace ASCOM.BMDome1
 {
     internal class DriverInfo
