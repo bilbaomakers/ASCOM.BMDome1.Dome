@@ -1,8 +1,7 @@
 //tabs=4
-// --------------------------------------------------------------------------------
-// TODO fill in this information for your driver, then remove this line!
-//
-// ASCOM Dome driver for BMDome1
+
+
+// Driver ASCOM para BMDome1
 //
 // Description:	Driver para controlador de Domo desarrollado por Bilbaomakers
 //				para el proyecto de observatorio astronomico en Marcilla de Campos.
@@ -12,18 +11,9 @@
 //
 // Implements:	ASCOM Dome interface version: 6.4SP1
 // Author:		Diego Maroto - BilbaoMakers 2019 - info@bilbaomakers.org
-//
-// Edit Log:
-//
-// Date			Who	Vers	Description
-// -----------	---	-----	-------------------------------------------------------
-// 28/01/2019	DMF	1.0.0	Creacion del proyecto y la aplicacion de pruebas
-// --------------------------------------------------------------------------------
-//
 
 
-// 
-// 
+
 
 #define Dome
 
