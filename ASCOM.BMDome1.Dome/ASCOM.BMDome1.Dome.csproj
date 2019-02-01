@@ -119,7 +119,8 @@
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Resources\BMLogoORG_200x230.jpg" />
+    <None Include="Resources\M31.jpg" />
+    <None Include="Resources\BMLogoORG_200x230.jpg" />
     <None Include="app.config" />
     <None Include="ASCOM.png" />
     <None Include="ASCOMDriverTemplate.snk" />

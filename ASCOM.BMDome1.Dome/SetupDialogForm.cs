@@ -77,13 +77,11 @@ namespace ASCOM.BMDome1
 
             this.CmdPruebaCom.Click += CmdPruebaCom_Click;
             this.picASCOM.Click += BrowseToAscom;
-            this.picBM.Click += BrowseToBM;
+            //this.picBM.Click += BrowseToBM;
             this.cmdOK.Click += CmdOK_Click;
 
             // Leer la configuracion del driver
-
-
-
+         
             miconfiguracion = new Configuracion(driverID);
 
             TxtIdCliente.Text = miconfiguracion.IdCliente;
@@ -92,6 +90,7 @@ namespace ASCOM.BMDome1
             TxtUsuario.Text = miconfiguracion.Usuario;
             TxtPassword.Text = miconfiguracion.Password;
             TxtTopicBase.Text = miconfiguracion.TopicBase;
+            comboQoS.Text = miconfiguracion.QoS;
                                                
         }
 
@@ -106,6 +105,7 @@ namespace ASCOM.BMDome1
             miconfiguracion.Usuario = TxtUsuario.Text;
             miconfiguracion.Password = TxtPassword.Text;
             miconfiguracion.TopicBase = TxtTopicBase.Text;
+            miconfiguracion.QoS = comboQoS.Text;
 
             miconfiguracion.Guardar();
             

@@ -71,12 +71,32 @@ namespace ASCOM.BMDome1.Properties {
         }
         
         /// <summary>
+        ///   Busca un recurso adaptado de tipo System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap BMLogoORG_200x230 {
+            get {
+                object obj = ResourceManager.GetObject("BMLogoORG_200x230", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
         ///   Busca un recurso adaptado de tipo System.Drawing.Icon similar a (Icono).
         /// </summary>
         internal static System.Drawing.Icon DefaultIcon {
             get {
                 object obj = ResourceManager.GetObject("DefaultIcon", resourceCulture);
                 return ((System.Drawing.Icon)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Busca un recurso adaptado de tipo System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap M31 {
+            get {
+                object obj = ResourceManager.GetObject("M31", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
             }
         }
     }

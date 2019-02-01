@@ -19,6 +19,7 @@ namespace ASCOM.BMDome1
         public string Usuario { get; set; } = "";
         public string Password { get; set; } = "";
         public string TopicBase { get; set; } = "";
+        public string QoS { get; set; } = "";
 
         private string _DriverId;
 
