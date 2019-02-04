@@ -69,9 +69,23 @@ namespace ASCOM.BMDome1
         private static string driverDescription = "Domo BilbaoMakers Version 1.0.0";
 
 
-        Configuracion miconfiguracion;
+        // Mis Objetos para este ambito (el del driver)
+        // Para mi gestor de configuraciones
+        private Configuracion miconfiguracion;
 
+        // Para las comunicaciones
+        private MqttClient lMqttClient;
+        private MqttFactory lMqttFactory;
+        private IMqttClientOptions lIMqttClientOptions;
 
+        private static readonly string TopicStatus = "/STAUS";
+        private static readonly string TopicComando = "/CMD";
+        private static readonly string TopicLWTDriver = "/Driver/LWT";
+        private static readonly string TopicLWTHardware = "/Hardware/LWT";
+
+        private static MqttApplicationMessage MensajeLWT;
+
+               
         /// <summary>
         /// Variable para almacenar el estado conectado
         /// </summary>
@@ -102,7 +116,7 @@ namespace ASCOM.BMDome1
         public Dome()
         {
             tl = new TraceLogger("", "BMDome1");
-            ReadProfile(); // Read device configuration from the ASCOM Profile store
+            //ReadProfile(); // Read device configuration from the ASCOM Profile store
 
             tl.LogMessage("Dome", "Starting initialisation");
 
@@ -111,8 +125,32 @@ namespace ASCOM.BMDome1
             astroUtilities = new AstroUtils(); // Initialise astro utilities object
             //TODO: Implement your additional construction here
 
+            // En el constructor del Driver inicializo objetos que me hagan falta luego
+
+            // Mi Configuracion
+            miconfiguracion = new Configuracion(driverID);
+
+            // Los del MQTT
+            lMqttFactory = new MqttFactory();
+            lMqttClient = (MqttClient)lMqttFactory.CreateMqttClient();
+
+            MensajeLWT.Topic = miconfiguracion.TopicBase + TopicLWTDriver;
+            MensajeLWT.Payload = Encoding.ASCII.GetBytes("DLC");      // Mensaje Driver Lost Connection
+            MensajeLWT.Retain = true;
+            MensajeLWT.QualityOfServiceLevel = MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce;
+
+            lIMqttClientOptions = (IMqttClientOptions)new MqttClientOptionsBuilder()
+              .WithClientId(miconfiguracion.IdCliente)
+              .WithTcpServer(miconfiguracion.ServidorMQTT)
+              .WithCredentials(miconfiguracion.Usuario, miconfiguracion.Password)
+              .WithWillMessage(MensajeLWT)
+              .WithKeepAlivePeriod(new TimeSpan(10000))
+              .WithCleanSession()
+              .Build();
+                        
             tl.LogMessage("Dome", "Completed initialisation");
         }
+
 
 
         //
@@ -139,11 +177,13 @@ namespace ASCOM.BMDome1
                 var result = F.ShowDialog();
                 if (result == System.Windows.Forms.DialogResult.OK)
                 {
-                    WriteProfile(); // Persist device configuration values to the ASCOM Profile store
+                    //WriteProfile(); // Persist device configuration values to the ASCOM Profile store
                 }
             }
         }
 
+
+        // De momento no devolvemos ninguna "Supported Action" extra
         public ArrayList SupportedActions
         {
             get
@@ -153,12 +193,14 @@ namespace ASCOM.BMDome1
             }
         }
 
+        // Y por lo tanto ni metodos ni nada, devolvemos excepcion para que el software sepa que no lo permite este driver.
         public string Action(string actionName, string actionParameters)
         {
-            LogMessage("", "Action {0}, parameters {1} not implemented", actionName, actionParameters);
             throw new ASCOM.ActionNotImplementedException("Action " + actionName + " is not implemented by this driver");
         }
 
+
+        // Esto no nos interesa de momento
         public void CommandBlind(string command, bool raw)
         {
             CheckConnected("CommandBlind");
@@ -169,6 +211,7 @@ namespace ASCOM.BMDome1
             // DO NOT have both these sections!  One or the other
         }
 
+        // Esto no nos interesa de momento
         public bool CommandBool(string command, bool raw)
         {
             CheckConnected("CommandBool");
@@ -179,6 +222,7 @@ namespace ASCOM.BMDome1
             // DO NOT have both these sections!  One or the other
         }
 
+        // AQUI SE SUPONE QUE HAY QUE PONER LA COMUNICACIONES CON EL HW
         public string CommandString(string command, bool raw)
         {
             CheckConnected("CommandString");
@@ -186,9 +230,14 @@ namespace ASCOM.BMDome1
             // then all communication calls this function
             // you need something to ensure that only one command is in progress at a time
 
+            // QUITAR CUANDO IMPLEMENTADO
             throw new ASCOM.MethodNotImplementedException("CommandString");
+
+
         }
 
+
+        // Esto es para destruir la instancia del Driver. Lo dejamos como esta de momento.
         public void Dispose()
         {
             // Clean up the tracelogger and util objects
@@ -201,31 +250,73 @@ namespace ASCOM.BMDome1
             astroUtilities = null;
         }
 
+
+        // La propiedad Conected. Es el estado de la Variable PRIVADA IsConected
         public bool Connected
         {
+            // Leerla es facil .....
             get
             {
-                LogMessage("Connected", "Get {0}", IsConnected);
+                tl.LogMessage("Connected", "Get {0}", IsConnected);
                 return IsConnected;
             }
 
 
+
+            // Cambiar su valor implica hablar con el HW.
             set
             {
                 tl.LogMessage("Connected", "Set {0}", value);
                 if (value == IsConnected)
                     return;
 
+
+                // Aqui abro la conexion si no lo esta con el servidor MQTT y hablo con el Arduino principal
+                // Si en el set me estan poniendo el valor a true .....
                 if (value)
                 {
                     connectedState = true;
-                    LogMessage("Connected Set", "Conectando al control");
-                    // TODO connect to the device
+                    tl.LogMessage("Connected Set", "Conectando al control");
+                    
+                    // Intentar conexion con servidor MQTT
+                    try
+                    {
+
+                        lMqttClient.Connected += delegate (object client, MqttClientConnectedEventArgs e1)
+                        {
+
+
+                            DriverInfo lDriverInfo = new DriverInfo();
+
+
+                            //Configuracion b = Json.Deserialize<Configuracion>(a);
+                            //Json.Serialize(miconfiguracion);
+
+                            lMqttClient.PublishAsync(miconfiguracion.TopicBase + "/INFO", lDriverInfo.Json());
+
+                        
+                        };
+
+
+                        lMqttClient.ConnectAsync(lIMqttClientOptions);
+
+                    }
+
+                    // Si falla la conexion con servidor MQTT .....
+                    catch (MQTTnet.Exceptions.MqttCommunicationException f)
+                    {
+
+                        
+
+                    }
+
+
+
                 }
                 else
                 {
                     connectedState = false;
-                    LogMessage("Connected Set", "Desconectando del control");
+                    tl.LogMessage("Connected Set", "Desconectando del control");
                     // TODO disconnect from the device
                 }
             }
@@ -269,7 +360,7 @@ namespace ASCOM.BMDome1
             // set by the driver wizard
             get
             {
-                LogMessage("InterfaceVersion Get", "2");
+                tl.LogMessage("InterfaceVersion Get", "2");
                 return Convert.ToInt16("2");
             }
         }
@@ -573,6 +664,26 @@ namespace ASCOM.BMDome1
 
         #endregion
 
+
+
+        #region COMUNICACIONES CON EL HARDWARE
+
+        // Estrujandome la sesera para ver como comunicar a la perfeccion con el cacharro
+        private class Comando
+        {
+
+
+
+
+
+
+        }
+
+
+
+        #endregion
+
+
         /// <summary>
         /// Returns true if there is a valid connection to the driver hardware
         /// </summary>
@@ -597,6 +708,14 @@ namespace ASCOM.BMDome1
             }
         }
 
+
+        /*
+         * 
+         * Esto esta quitado porque NO lo hago aqui lo hago en mi objeto de configuracion (lo del leer y escribir el profile)
+         * 
+        
+
+
         /// <summary>
         /// Read the device configuration from the ASCOM Profile store
         /// </summary>
@@ -611,6 +730,8 @@ namespace ASCOM.BMDome1
         /// <summary>
         /// Write the device configuration to the  ASCOM  Profile store
         /// </summary>
+        
+
         internal void WriteProfile()
         {
             using (Profile driverProfile = new Profile())
@@ -630,6 +751,8 @@ namespace ASCOM.BMDome1
             var msg = string.Format(message, args);
             tl.LogMessage(identifier, msg);
         }
+        */
+               
         #endregion
     }
 }
