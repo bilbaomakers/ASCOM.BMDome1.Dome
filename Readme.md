@@ -13,10 +13,3 @@ Proyecto para desarrollar un controlador para la orientacion Azimut de la cupula
 
 Utiliza Arduino como microcontrolador(es) y MQTT como protocolo de comunicaciones entre el PC y el Hardware
 
-
-# Recuperar
-
-# Cambio GitHub
-
-# Cambio PC
-
