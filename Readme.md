@@ -1,4 +1,4 @@
-DRIVER ASCOM DOMO BILBAOMAKERS V 1.0.0
+#DRIVER ASCOM DOMO BILBAOMAKERS V 1.0.0
 
 Driver Ascom para el controlador de la cupula del Observatorio Astronomico de Marcilla de Campos.
 
