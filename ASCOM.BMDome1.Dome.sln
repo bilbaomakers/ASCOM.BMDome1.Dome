@@ -17,6 +17,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Control_Azimut", "Control_A
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Control_Shutter", "Control_Shutter\Control_Shutter.vcxproj", "{529368A1-EB1F-4A41-B7BF-FEA9F1277B65}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "CAD", "CAD", "{B5FE4ABB-2865-4346-A950-C38A43C49959}"
+	ProjectSection(SolutionItems) = preProject
+		CAD.txt = CAD.txt
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
