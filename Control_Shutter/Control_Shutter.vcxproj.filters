@@ -15,11 +15,11 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.Control_Azimut.vsarduino.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
+    <None Include="Control_Shutter.ino" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Control_Azimut.ino" />
+    <ClInclude Include="__vm\.Control_Shutter.vsarduino.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
