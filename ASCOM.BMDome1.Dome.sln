@@ -9,6 +9,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App_Prueba_Domo", "App_Prue
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{F7036ABA-C6D6-4AEB-91AA-C2322F379E61}"
 	ProjectSection(SolutionItems) = preProject
+		Herramientas.odt = Herramientas.odt
 		Readme.md = Readme.md
 	EndProjectSection
 EndProject
