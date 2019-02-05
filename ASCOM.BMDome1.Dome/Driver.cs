@@ -80,8 +80,8 @@ namespace ASCOM.BMDome1
 
         private static readonly string TopicStatus = "/STAUS";
         private static readonly string TopicComando = "/CMD";
-        private static readonly string TopicLWTDriver = "/Driver/LWT";
-        private static readonly string TopicLWTHardware = "/Hardware/LWT";
+        private static readonly string TopicLWTDriver = "/DRIVER/LWT";
+        private static readonly string TopicLWTHardware = "/HARDWARE/LWT";
 
         private static MqttApplicationMessage MensajeLWT;
 
