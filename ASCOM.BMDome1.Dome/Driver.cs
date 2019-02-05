@@ -287,11 +287,6 @@ namespace ASCOM.BMDome1
 
 
                             DriverInfo lDriverInfo = new DriverInfo();
-
-
-                            //Configuracion b = Json.Deserialize<Configuracion>(a);
-                            //Json.Serialize(miconfiguracion);
-
                             lMqttClient.PublishAsync(miconfiguracion.TopicBase + "/INFO", lDriverInfo.Json());
 
                         

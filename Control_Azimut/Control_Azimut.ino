@@ -11,13 +11,25 @@
 // Author:		Diego Maroto - BilbaoMakers 2019 - info@bilbaomakers.org
 
 
-#include <FS.h>							// Libreria Sistema de Ficcheros
+#include <MQTTClient.h>
+#include <MQTT.h>
+#include <AccelStepper.h>				// Para controlar el stepper como se merece: https://www.airspayce.com/mikem/arduino/AccelStepper/classAccelStepper.html
+#include <FS.h>							// Libreria Sistema de Ficheros
 #include <ESP8266WiFi.h>          
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>          
 #include <ArduinoJson.h> 
-#include <PubSubClient.h>
+#include <string>
+
+
+// Variables para el Stepper
+uint8_t StepperPulse = D2;
+uint8_t StepperDir = D1;
+uint8_t StepperEnable = D0;
+float StepperMaxSpeed = 500;
+float StepperAceleration = 100;
+
 
 // Definir Valores. Si existen posterioirmente en el fichero de configuracion en el SPIFFS se sobreescibiran con esos valores.
 char mqtt_server[40] = "";
@@ -53,22 +65,18 @@ WiFiManager wifiManager;
 
 // Para la conexion MQTT
 WiFiClient Clientered;
-PubSubClient Clientemqtt(Clientered);
+MQTTClient ClienteMQTT;
+
 long lastMsg = 0;
 char msg[50];
 int value = 0;
 
 
-// Funcion mensage MQTT recibido
-void rxmqttmsg(char* topic, byte* payload, unsigned int length) {
-	Serial.print("Message arrived [");
-	Serial.print(topic);
-	Serial.print("] ");
-	for (int i = 0; i < length; i++) {
-		Serial.print((char)payload[i]);
-	}
 
-}
+
+// Controlador Stepper
+AccelStepper ControladorStepper;
+
 
 
 void setup() {
@@ -225,29 +233,63 @@ void setup() {
 	if (WiFi.status() == WL_CONNECTED) {
 
 		Serial.println("Estoy conectado a la WIFI");
-		Clientemqtt.setServer(mqtt_server, 1883);
-		if (Clientemqtt.connect("CONTROLADORBM", mqtt_usuario, mqtt_password)) {
+		
+		// Construir el cliente MQTT con el objeto cliente de la red wifi
+		ClienteMQTT.begin("dmarofer.mooo.info", 1883, Clientered);
 
-			Serial.println("Conectado al servidor MQTT");
-			Clientemqtt.setCallback(rxmqttmsg);
+		Serial.println("Intentando conectar al MQTT");
+
+		// Intentar conectar al controlador MQTT.
+		while (!ClienteMQTT.connect("ControladorAZ", mqtt_usuario, mqtt_password, false)) {
+
+			Serial.println("Conectado al MQTT");
+
 		}
-
-		else
-		{
-			Serial.println("No se puede conectar al servidor MQTT");
-		}
-
+					
+		// Si hemos conseguido conectar
+		// funcion para manejar los MSG entrantes
+		ClienteMQTT.onMessage(MsgRecibido);
+		
+		// Topics a los que Suscribirse
+		if (ClienteMQTT.subscribe(mqtt_topic, 2)) {Serial.println("Suscrito al topic " + String(mqtt_topic));}
+				
 	}
 
-	
+
+
+
+
+	// Instanciar el controlador de Stepper. Se le pasa el pin de pulsos y el de direccion en el constructor y despues el enable si queremos usarlo
+	ControladorStepper = AccelStepper(AccelStepper::DRIVER, StepperPulse, D1);
+	ControladorStepper.setEnablePin(StepperEnable);
+	ControladorStepper.disableOutputs();
+	ControladorStepper.setMaxSpeed(StepperMaxSpeed);
+	ControladorStepper.setAcceleration(StepperAceleration);
+	//ControladorStepper.setMinPulseWidth(30); // Ancho minimo de pulso en microsegundos
+		
+
 }
 
 
 
 void loop() {
   
+	ControladorStepper.run(); // Esto hay que llamar para que "run ...."
+	
+}
 
 
 
+void MueveCupula(int Azimut) {
+
+	ControladorStepper.moveTo(Azimut); // El Moveto Mueve pasos. Yo aqui paso el azimut. Hacer la conversion segun pasos por grado antes
+	
+}
+
+
+// Funcion que se ejecuta cuando recibo un mensage MQTT. Decodificar aqui dentro.
+void MsgRecibido(String &topic, String &payload) {
+
+	Serial.println("MSG Recibido" + topic + " - " + payload);
 
 }
