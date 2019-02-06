@@ -10,9 +10,8 @@
 // Implements:	ASCOM Dome interface version: 6.4SP1
 // Author:		Diego Maroto - BilbaoMakers 2019 - info@bilbaomakers.org
 
-
 #include <MQTTClient.h>
-#include <MQTT.h>
+//#include <MQTT.h>
 #include <AccelStepper.h>				// Para controlar el stepper como se merece: https://www.airspayce.com/mikem/arduino/AccelStepper/classAccelStepper.html
 #include <FS.h>							// Libreria Sistema de Ficheros
 #include <ESP8266WiFi.h>          
@@ -40,7 +39,8 @@ char mqtt_password[19] = "";
 
 
 // flag para saber si tenemos que salvar los datos
-bool shouldSaveConfig = false;
+//bool shouldSaveConfig = false;
+bool shouldSaveConfig = true;
 
 
 // Funcion Callback disparada por el WifiManager para que sepamos que hay que hay una nueva configuracion que salvar (para los custom parameters).
@@ -72,11 +72,8 @@ char msg[50];
 int value = 0;
 
 
-
-
 // Controlador Stepper
 AccelStepper ControladorStepper;
-
 
 
 void setup() {
@@ -239,24 +236,40 @@ void setup() {
 
 		Serial.println("Intentando conectar al MQTT");
 
+		Serial.println(String(mqtt_usuario) + " " + String(mqtt_password));
+		
 		// Intentar conectar al controlador MQTT.
-		while (!ClienteMQTT.connect("ControladorAZ", mqtt_usuario, mqtt_password, false)) {
+		
+		if (ClienteMQTT.connect("ControladorAZ", mqtt_usuario, mqtt_password, false)) {
 
 			Serial.println("Conectado al MQTT");
-
 		}
+		
+
+		else {
+
+			Serial.println("Error Conectando al MQTT: " + String(ClienteMQTT.lastError()) + "Lanzando Portal de Configuracion");
+			// Esto aqui no vale porque despues de cambiar la config aqui no haria lo de arriba del setup.
+			// wifiManager.startConfigPortal("BMDomo1", "BMDomo1");
+											
+		}
+				
 					
 		// Si hemos conseguido conectar
 		// funcion para manejar los MSG entrantes
 		ClienteMQTT.onMessage(MsgRecibido);
 		
 		// Topics a los que Suscribirse
-		if (ClienteMQTT.subscribe(mqtt_topic, 2)) {Serial.println("Suscrito al topic " + String(mqtt_topic));}
-				
+		if (ClienteMQTT.subscribe(mqtt_topic, 2)) {
+		
+			Serial.println("Suscrito al topic " + String(mqtt_topic));
+			ClienteMQTT.publish(mqtt_topic, "Hola soy el Hardware y estoy Vivo");
+		
+		}
+		else { Serial.println("Error Suscribiendome al topic " + String(mqtt_topic)); }
 	}
 
-
-
+	
 
 
 	// Instanciar el controlador de Stepper. Se le pasa el pin de pulsos y el de direccion en el constructor y despues el enable si queremos usarlo
@@ -266,7 +279,14 @@ void setup() {
 	ControladorStepper.setMaxSpeed(StepperMaxSpeed);
 	ControladorStepper.setAcceleration(StepperAceleration);
 	//ControladorStepper.setMinPulseWidth(30); // Ancho minimo de pulso en microsegundos
-		
+	
+	
+
+	Serial.println("Terminado Setup. Iniciando Loop");
+
+	// Habilitar WatchDog
+	wdt_enable(WDTO_500MS);
+
 
 }
 
@@ -276,14 +296,21 @@ void loop() {
   
 	ControladorStepper.run(); // Esto hay que llamar para que "run ...."
 	
+
+
+	// Resetear contador de WatchDog
+	wdt_reset();
+
 }
+
+
 
 
 
 void MueveCupula(int Azimut) {
 
 	ControladorStepper.moveTo(Azimut); // El Moveto Mueve pasos. Yo aqui paso el azimut. Hacer la conversion segun pasos por grado antes
-	
+		
 }
 
 
