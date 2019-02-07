@@ -26,14 +26,33 @@
 #include <MQTTClient.h>
 #include <AccelStepper.h>				// Para controlar el stepper como se merece: https://www.airspayce.com/mikem/arduino/AccelStepper/classAccelStepper.html
 #include <FS.h>							// Libreria Sistema de Ficheros
-#include <ESP8266WiFi.h>          
-#include <DNSServer.h>
-#include <ESP8266WebServer.h>
-#include <WiFiManager.h>          
-#include <ArduinoJson.h> 
-#include <string>
+#include <ESP8266WiFi.h>			    // Para las comunicaciones WIFI
+#include <DNSServer.h>					// La necesita WifiManager para el portal captivo
+#include <ESP8266WebServer.h>			// La necesita WifiManager para el formulario de configuracion
+#include <WiFiManager.h>				// Para la gestion avanzada de la wifi
+#include <ArduinoJson.h>				// OJO: Tener instalada una version NO BETA (a dia de hoy la estable es la 5.13.4). Alguna pata han metido en la 6
+#include <string>						// Para el manejo de cadenas
+#include <Ticker.h>						// Para los "eventos periodicos"	
+
+
+#pragma region Enum
+
+// Enum para el estado del controlador
+enum  EnumEstadoControlador {
+	
+	HWOffline,
+	HWReady
+
+	 };
+
+# pragma endregion
+
+
 
 #pragma region Variables
+
+// Identificador del HardWare y Software
+String HardwareInfo = "BMDome1.HWAz1.0";
 
 
 // Variables para el Stepper
@@ -56,10 +75,19 @@ char mqtt_password[19] = "";
 bool shouldSaveConfig = true;
 
 
+
+// flags que cambian los tickers (porque no hay que llamar a cosas asincronas como MQTT Publish desde las callback de los tickers, lio de interrupciones y catacarsh)
+
+boolean Tick30s_f = false;
+
 #pragma endregion
 
 
 #pragma region Objetos
+
+// Objetos Ticker
+Ticker Tick30s;				// Para hacer cosas cada 30 segundos
+
 
 // Wifimanager (aqui para que se vea tambien en el Loop)
 WiFiManager wifiManager;
@@ -76,6 +104,10 @@ int value = 0;
 
 // Controlador Stepper
 AccelStepper ControladorStepper;
+
+// Objeto para el estado del controlador
+EnumEstadoControlador EstadoControlador;
+
 
 #pragma endregion
 
@@ -103,18 +135,29 @@ void ConectarMQTT() {
 
 		Serial.println("Conectado al MQTT");
 
-		// Suscribirse a los topics
-		if (ClienteMQTT.subscribe(mqtt_topic, 2)) {
+		// Suscribirse al topic de Entrada de Comandos
+		if (ClienteMQTT.subscribe(String(mqtt_topic) + "/CMD", 2)) {
 
-			Serial.println("Suscrito al topic " + String(mqtt_topic));
-			ClienteMQTT.publish(mqtt_topic, "Hola soy el Hardware y estoy Vivo");
+			// Si suscrito correctamente
+			Serial.println("Suscrito al topic " + String(mqtt_topic) + "/CMD");
+									
 
 		}
-		else { Serial.println("Error Suscribiendome al topic " + String(mqtt_topic)); }
+		else { Serial.println("Error Suscribiendome al topic " + String(mqtt_topic) + "/CMD"); }
 
 			   
 		// funcion para manejar los MSG entrantes
 		ClienteMQTT.onMessage(MsgRecibido);
+
+		// Arrancar Tickers de 30s
+		Tick30s.attach(10, CambiaFlagsTicker30s);
+
+
+		// Si llegamos hasta aqui es estado del controlador es Ready
+		EstadoControlador = HWReady;
+		Serial.println("Controlador en estado: " + String(EstadoControlador));
+		// Enviar topic de Info
+		SendInfo();
 
 	}
 
@@ -127,6 +170,47 @@ void ConectarMQTT() {
 
 
 }
+
+
+void CambiaFlagsTicker30s() {
+
+	Tick30s_f = true;
+
+}
+
+
+
+// Para enviar el JSON de estado al topic INFO. Serializa un JSON a partir de un OBJETO
+void SendInfo() {
+	
+	
+	// Crear un Buffer para los objetos a serializar, en este caso y de momento uno estatico para 3 objetos
+	const int capacity = JSON_OBJECT_SIZE(3);
+	StaticJsonBuffer<capacity> jBuffer;
+
+	// Aqui creamos el objeto "generico" y vacio JsonObject que usaremos desde aqui
+	JsonObject& jObj = jBuffer.createObject();
+
+	jObj.set("HWAInf", HardwareInfo);
+	jObj.set("HWASta", EstadoControlador);
+	
+
+
+	// Crear el Array de valores JSON
+	//JsonArray& cadena = jObj.createNestedArray("cadena");
+
+	// Crear un buffer donde almacenar la cadena de texto del JSON
+	char JSONmessageBuffer[100];
+
+	// Tirar al buffer la cadena de objetos serializada en JSON
+	jObj.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+	
+
+	// Publicarla en el post de INFO
+	ClienteMQTT.publish(String(mqtt_topic) + "/INFO", JSONmessageBuffer,false,2);
+		
+	}
+
 
 
 
@@ -156,6 +240,11 @@ void setup() {
 
 	Serial.begin(115200);
 	Serial.println();
+
+	// Para el Estado del controlador
+	EstadoControlador = HWOffline;
+
+
 
 #pragma region Sistema de ficheros para configuracion
 
@@ -345,7 +434,7 @@ void setup() {
 	Serial.println("Terminado Setup. Iniciando Loop");
 
 	// Habilitar WatchDog
-	wdt_enable(WDTO_500MS);
+	// wdt_enable(WDTO_4S);
 
 
 }
@@ -354,12 +443,29 @@ void setup() {
 
 void loop() {
   
+	
 	// Loop del cliente MQTT
 	ClienteMQTT.loop();
 
-	if (!ClienteMQTT.connected()) {
+	
+	if (Tick30s_f) {
+
+		if (!ClienteMQTT.connected()) {
+
+			Serial.println("HORROR!!: No estamos conectados al MQTT.");
+			ConectarMQTT();
+
+		}
+
+		else
+		{
+
+			SendInfo();
+
+		}
 		
-		ConectarMQTT();
+				
+		Tick30s_f = false;
 
 	}
 	
@@ -367,7 +473,7 @@ void loop() {
 	ControladorStepper.run(); // Esto hay que llamar para que "run ...."
 		
 	// Resetear contador de WatchDog
-	wdt_reset();
+	//wdt_reset();
 
 }
 
