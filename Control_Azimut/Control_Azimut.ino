@@ -10,8 +10,20 @@
 // Implements:	ASCOM Dome interface version: 6.4SP1
 // Author:		Diego Maroto - BilbaoMakers 2019 - info@bilbaomakers.org
 
+
+// Cosas a hacer en el futuro
+/*
+
+		- Implementar uno a varios Led WS2812 para informar del estado de lo importante
+		- Implementar un boton o algo para forzar el portal del WifiManager por si hay que cambiar la config del MQTT
+		
+
+*/
+
+
+
+#include <MQTT.h>						// Libreria MQTT (2 includes): https://github.com/256dpi/arduino-mqtt
 #include <MQTTClient.h>
-//#include <MQTT.h>
 #include <AccelStepper.h>				// Para controlar el stepper como se merece: https://www.airspayce.com/mikem/arduino/AccelStepper/classAccelStepper.html
 #include <FS.h>							// Libreria Sistema de Ficheros
 #include <ESP8266WiFi.h>          
@@ -20,6 +32,8 @@
 #include <WiFiManager.h>          
 #include <ArduinoJson.h> 
 #include <string>
+
+#pragma region Variables
 
 
 // Variables para el Stepper
@@ -30,34 +44,22 @@ float StepperMaxSpeed = 500;
 float StepperAceleration = 100;
 
 
-// Definir Valores. Si existen posterioirmente en el fichero de configuracion en el SPIFFS se sobreescibiran con esos valores.
+//Valores Wifimanager para MQTT. Si existen posterioirmente en el fichero de configuracion en el SPIFFS se sobreescibiran con esos valores.
 char mqtt_server[40] = "";
 char mqtt_port[6] = "";
 char mqtt_topic[33] = "";
 char mqtt_usuario[19] = "";
 char mqtt_password[19] = "";
 
-
-// flag para saber si tenemos que salvar los datos
+// flag para saber si tenemos que salvar los datos en el fichero de configuracion.
 //bool shouldSaveConfig = false;
 bool shouldSaveConfig = true;
 
 
-// Funcion Callback disparada por el WifiManager para que sepamos que hay que hay una nueva configuracion que salvar (para los custom parameters).
-void saveConfigCallback() {
-	Serial.println("Lanzado SaveConfigCallback");
-	shouldSaveConfig = true;
-}
+#pragma endregion
 
 
-
-// Funcion lanzada cuando entra en modo AP
-void APCallback(WiFiManager *wifiManager) {
-	Serial.println("Lanzado APCallback");
-	Serial.println(WiFi.softAPIP());
-	Serial.println(wifiManager->getConfigPortalSSID());
-}
-
+#pragma region Objetos
 
 // Wifimanager (aqui para que se vea tambien en el Loop)
 WiFiManager wifiManager;
@@ -75,11 +77,87 @@ int value = 0;
 // Controlador Stepper
 AccelStepper ControladorStepper;
 
+#pragma endregion
+
+
+#pragma region Funciones
+
+// Funcion Callback disparada por el WifiManager para que sepamos que hay que hay una nueva configuracion que salvar (para los custom parameters).
+void saveConfigCallback() {
+	Serial.println("Lanzado SaveConfigCallback");
+	shouldSaveConfig = true;
+}
+
+// Funcion lanzada cuando entra en modo AP
+void APCallback(WiFiManager *wifiManager) {
+	Serial.println("Lanzado APCallback");
+	Serial.println(WiFi.softAPIP());
+	Serial.println(wifiManager->getConfigPortalSSID());
+}
+
+// Para conectar al servidor MQTT y suscribirse a los topics
+void ConectarMQTT() {
+
+	// Intentar conectar al controlador MQTT.
+	if (ClienteMQTT.connect("ControladorAZ", mqtt_usuario, mqtt_password, false)) {
+
+		Serial.println("Conectado al MQTT");
+
+		// Suscribirse a los topics
+		if (ClienteMQTT.subscribe(mqtt_topic, 2)) {
+
+			Serial.println("Suscrito al topic " + String(mqtt_topic));
+			ClienteMQTT.publish(mqtt_topic, "Hola soy el Hardware y estoy Vivo");
+
+		}
+		else { Serial.println("Error Suscribiendome al topic " + String(mqtt_topic)); }
+
+			   
+		// funcion para manejar los MSG entrantes
+		ClienteMQTT.onMessage(MsgRecibido);
+
+	}
+
+	else {
+
+		Serial.println("Error Conectando al MQTT: " + String(ClienteMQTT.lastError()));
+		//Serial.println("Estado del Connected:" + String(ClienteMQTT.connected()));
+
+	}
+
+
+}
+
+
+
+// Funcion para movel el Azimut de la cupula
+void MueveCupula(int Azimut) {
+
+	ControladorStepper.moveTo(Azimut); // El Moveto Mueve pasos. Yo aqui paso el azimut. Hacer la conversion segun pasos por grado antes
+
+}
+
+
+// Funcion que se ejecuta cuando recibo un mensage MQTT. Decodificar aqui dentro.
+void MsgRecibido(String &topic, String &payload) {
+
+	Serial.println("MSG Recibido en el topic: " + topic);
+	Serial.println("Payload: " + payload);
+
+}
+
+
+#pragma endregion
+
+
+
 
 void setup() {
 
 	Serial.begin(115200);
 	Serial.println();
+
+#pragma region Sistema de ficheros para configuracion
 
 	// Formatear el sistema de ficheros SPIFFS
 	// SPIFFS.format();
@@ -94,7 +172,7 @@ void setup() {
 			Serial.println("Leyendo configuracion del fichero");
 			File configFile = SPIFFS.open("/config.json", "r");
 			if (configFile) {
-				Serial.println("opened config file");
+				Serial.println("Fichero de configuracion encontrado");
 				size_t size = configFile.size();
 				// Declarar un buffer para almacenar el contenido del fichero
 				std::unique_ptr<char[]> buf(new char[size]);
@@ -102,7 +180,7 @@ void setup() {
 				configFile.readBytes(buf.get(), size);
 				DynamicJsonBuffer jsonBuffer;
 				JsonObject& json = jsonBuffer.parseObject(buf.get());
-				json.printTo(Serial);
+				//json.printTo(Serial);
 				if (json.success()) {
 					Serial.println("Configuracion del fichero leida");
 
@@ -125,7 +203,11 @@ void setup() {
 		Serial.println("No se puede montar el sistema de ficheros");
 	}
 
+#pragma endregion
 
+
+
+#pragma region WIFI
 
 	// Añadir al wifimanager parametros para el MQTT
 	WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40);
@@ -138,6 +220,8 @@ void setup() {
 
 	// Borrar la configuracion SSID y Password guardadas en EEPROM (Teoricamente esto hay que hacer despues de hace autoconect no se si esta bien aqui esto)
 	//wifiManager.resetSettings();
+
+	wifiManager.setDebugOutput(false);
 
 	// Definirle la funcion para aviso de que hay que salvar la configuracion
 	wifiManager.setSaveConfigCallback(saveConfigCallback);
@@ -167,28 +251,24 @@ void setup() {
 	// Definir la salida de Debug por el serial del WifiManager
 	wifiManager.setDebugOutput(false);
 
-	Serial.println("El Wifi Begin ....");
-
 	// Arrancar yo la wifi a mano si quiero ponerle yo aqui una wifi. Si no el wifiManager va a pillar la configuracion de la EEPROM
 	//Serial.println(WiFi.begin("MIWIFI", "MIPASSWORD"));
-	Serial.println(WiFi.begin());
-
+	
 	// Timeout para que si no configuramos el portal AP se cierre
 	wifiManager.setTimeout(300);
 
 	// Funcion autoConnect. Intenta conectar a la WIFI con los parametros de la EEPROM y si no puede o no hay entra en modo AP con SSID CONTROLADORBM y contraseña maker
 	// Teoricamente tambien quiero que despues del timeout del AP salga del wifimanager del todo para que siga el programa sin wifi ya lo mostrare por el display.
-	
 	Serial.println("Intentando Conectar a la Wifi .....");
 
 	if (!wifiManager.autoConnect("BMDomo1", "BMDomo1")) {
 
-		Serial.println("Salida 1 del Autoconnect");
+		Serial.println("WIFI Autoconect Fallido");
 	}
 
 	else {
 
-		Serial.println("Salida 2 del Autoconnect");
+		Serial.println("WIFI Autoconnect OK. SSID: " + String (WiFi.SSID()));
 	}
 
 	// Leer los parametros custom que tiene el wifimanager por si los he actualizado yo en modo AP
@@ -199,7 +279,7 @@ void setup() {
 
 	// Salvar los parametros custom 
 	if (shouldSaveConfig) {
-		Serial.println("Salvando la configuracion");
+		Serial.println("Salvando la configuracion en el fichero");
 		DynamicJsonBuffer jsonBuffer;
 		JsonObject& json = jsonBuffer.createObject();
 		json["mqtt_server"] = mqtt_server;
@@ -213,63 +293,41 @@ void setup() {
 			Serial.println("No se puede abrir el fichero de configuracion");
 		}
 
-		json.prettyPrintTo(Serial);
+		//json.prettyPrintTo(Serial);
 		json.printTo(configFile);
 		configFile.close();
 		//end save
 	}
 
-	Serial.println("local ip");
+	Serial.println("Configuracion de Red:");
+	Serial.print("IP: ");
 	Serial.println(WiFi.localIP());
-	Serial.println(WiFi.gatewayIP());
+	Serial.print("      ");
 	Serial.println(WiFi.subnetMask());
-	Serial.println(WiFi.SSID());
+	Serial.print("GW: ");
+	Serial.println(WiFi.gatewayIP());
+	
+	// Construir el cliente MQTT con el objeto cliente de la red wifi y combiar opciones
+	ClienteMQTT.begin("92.176.93.21", 1883, Clientered);
+	ClienteMQTT.setOptions(5, true, 3000);
 
+	// Esperar un poquito para que se acabe de conectar la wifi bien
+	delay(500);
 
-	// Cosas a hacer si la conexion es OK
+	// Si la conexion a la wifi es OK ......
 	if (WiFi.status() == WL_CONNECTED) {
-
-		Serial.println("Estoy conectado a la WIFI");
 		
-		// Construir el cliente MQTT con el objeto cliente de la red wifi
-		ClienteMQTT.begin("dmarofer.mooo.info", 1883, Clientered);
-
-		Serial.println("Intentando conectar al MQTT");
-
-		Serial.println(String(mqtt_usuario) + " " + String(mqtt_password));
+		Serial.println("Estoy conectado a la WIFI. Conectando al Broker MQTT");
 		
-		// Intentar conectar al controlador MQTT.
+		ConectarMQTT();
+						
 		
-		if (ClienteMQTT.connect("ControladorAZ", mqtt_usuario, mqtt_password, false)) {
-
-			Serial.println("Conectado al MQTT");
-		}
-		
-
-		else {
-
-			Serial.println("Error Conectando al MQTT: " + String(ClienteMQTT.lastError()) + "Lanzando Portal de Configuracion");
-			// Esto aqui no vale porque despues de cambiar la config aqui no haria lo de arriba del setup.
-			// wifiManager.startConfigPortal("BMDomo1", "BMDomo1");
-											
-		}
-				
-					
-		// Si hemos conseguido conectar
-		// funcion para manejar los MSG entrantes
-		ClienteMQTT.onMessage(MsgRecibido);
-		
-		// Topics a los que Suscribirse
-		if (ClienteMQTT.subscribe(mqtt_topic, 2)) {
-		
-			Serial.println("Suscrito al topic " + String(mqtt_topic));
-			ClienteMQTT.publish(mqtt_topic, "Hola soy el Hardware y estoy Vivo");
-		
-		}
-		else { Serial.println("Error Suscribiendome al topic " + String(mqtt_topic)); }
 	}
 
-	
+#pragma endregion
+
+
+#pragma region Stepper
 
 
 	// Instanciar el controlador de Stepper. Se le pasa el pin de pulsos y el de direccion en el constructor y despues el enable si queremos usarlo
@@ -280,6 +338,8 @@ void setup() {
 	ControladorStepper.setAcceleration(StepperAceleration);
 	//ControladorStepper.setMinPulseWidth(30); // Ancho minimo de pulso en microsegundos
 	
+#pragma endregion
+
 	
 
 	Serial.println("Terminado Setup. Iniciando Loop");
@@ -294,10 +354,18 @@ void setup() {
 
 void loop() {
   
-	ControladorStepper.run(); // Esto hay que llamar para que "run ...."
+	// Loop del cliente MQTT
+	ClienteMQTT.loop();
+
+	if (!ClienteMQTT.connected()) {
+		
+		ConectarMQTT();
+
+	}
 	
-
-
+	// Loop del Controlador del Stepper
+	ControladorStepper.run(); // Esto hay que llamar para que "run ...."
+		
 	// Resetear contador de WatchDog
 	wdt_reset();
 
@@ -307,16 +375,3 @@ void loop() {
 
 
 
-void MueveCupula(int Azimut) {
-
-	ControladorStepper.moveTo(Azimut); // El Moveto Mueve pasos. Yo aqui paso el azimut. Hacer la conversion segun pasos por grado antes
-		
-}
-
-
-// Funcion que se ejecuta cuando recibo un mensage MQTT. Decodificar aqui dentro.
-void MsgRecibido(String &topic, String &payload) {
-
-	Serial.println("MSG Recibido" + topic + " - " + payload);
-
-}
