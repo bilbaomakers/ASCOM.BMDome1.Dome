@@ -22,6 +22,7 @@
 
 
 
+#include <SerialCommands.h>				// Libreria para la gestion de comandos por el puerto serie https://github.com/ppedro74/Arduino-SerialCommands
 #include <MQTT.h>						// Libreria MQTT (2 includes): https://github.com/256dpi/arduino-mqtt
 #include <MQTTClient.h>
 #include <AccelStepper.h>				// Para controlar el stepper como se merece: https://www.airspayce.com/mikem/arduino/AccelStepper/classAccelStepper.html
@@ -35,18 +36,27 @@
 #include <Ticker.h>						// Para los "eventos periodicos"	
 
 
-#pragma region Enum
+#pragma region Estructuras y Enumeraciones
 
 // Enum para el estado del controlador
-enum  EnumEstadoControlador {
-	
+typedef enum EnumEstadoControlador {
 	HWOffline,
 	HWReady
+};
 
-	 };
+// Estructura para los elementos de la configuracion del Domo
+typedef struct DomeConfiguration {
+	long int PasosParaGiroCompleto;
+	float HomeAzimuth;
+	float ParkAzimuth;
+	bool IsReversed;
+	float Checksum;
+} dome_config;
+
+
+
 
 # pragma endregion
-
 
 
 #pragma region Variables
@@ -71,9 +81,8 @@ char mqtt_usuario[19] = "";
 char mqtt_password[19] = "";
 
 // flag para saber si tenemos que salvar los datos en el fichero de configuracion.
-//bool shouldSaveConfig = false;
-bool shouldSaveConfig = true;
-
+bool shouldSaveConfig = false;
+//bool shouldSaveConfig = true;
 
 
 // flags que cambian los tickers (porque no hay que llamar a cosas asincronas como MQTT Publish desde las callback de los tickers, lio de interrupciones y catacarsh)
@@ -149,8 +158,7 @@ void ConectarMQTT() {
 		// funcion para manejar los MSG entrantes
 		ClienteMQTT.onMessage(MsgRecibido);
 
-		// Arrancar Tickers de 30s
-		Tick30s.attach(10, CambiaFlagsTicker30s);
+		
 
 
 		// Si llegamos hasta aqui es estado del controlador es Ready
@@ -179,7 +187,6 @@ void CambiaFlagsTicker30s() {
 }
 
 
-
 // Para enviar el JSON de estado al topic INFO. Serializa un JSON a partir de un OBJETO
 void SendInfo() {
 	
@@ -195,7 +202,6 @@ void SendInfo() {
 	jObj.set("HWASta", EstadoControlador);
 	
 
-
 	// Crear el Array de valores JSON
 	//JsonArray& cadena = jObj.createNestedArray("cadena");
 
@@ -208,9 +214,10 @@ void SendInfo() {
 
 	// Publicarla en el post de INFO
 	ClienteMQTT.publish(String(mqtt_topic) + "/INFO", JSONmessageBuffer,false,2);
+	
+	Serial.println(JSONmessageBuffer);
 		
 	}
-
 
 
 
@@ -231,28 +238,9 @@ void MsgRecibido(String &topic, String &payload) {
 }
 
 
-#pragma endregion
+// Funcion para leer la configuracion desde el fichero de configuracion
+void LeeConfig (){
 
-
-
-
-void setup() {
-
-	Serial.begin(115200);
-	Serial.println();
-
-	// Para el Estado del controlador
-	EstadoControlador = HWOffline;
-
-
-
-#pragma region Sistema de ficheros para configuracion
-
-	// Formatear el sistema de ficheros SPIFFS
-	// SPIFFS.format();
-
-	// Leer la configuracion que hay en el archivo de configuracion config.json
-	Serial.println("Montando el sistema de ficheros");
 
 	if (SPIFFS.begin()) {
 		Serial.println("Sistema de ficheros montado");
@@ -279,7 +267,7 @@ void setup() {
 					strcpy(mqtt_topic, json["mqtt_topic"]);
 					strcpy(mqtt_usuario, json["mqtt_usuario"]);
 					strcpy(mqtt_password, json["mqtt_password"]);
-								
+
 				}
 				else {
 					Serial.println("No se puede carcar la configuracion desde el fichero");
@@ -292,9 +280,180 @@ void setup() {
 		Serial.println("No se puede montar el sistema de ficheros");
 	}
 
+
+}
+
+
+// Funcion para Salvar la configuracion en el fichero de configuracion
+void SalvaConfig() {
+
+	Serial.println("Salvando la configuracion en el fichero");
+	DynamicJsonBuffer jsonBuffer;
+	JsonObject& json = jsonBuffer.createObject();
+	json["mqtt_server"] = mqtt_server;
+	json["mqtt_port"] = mqtt_port;
+	json["mqtt_topic"] = mqtt_topic;
+	json["mqtt_usuario"] = mqtt_usuario;
+	json["mqtt_password"] = mqtt_password;
+
+	File configFile = SPIFFS.open("/config.json", "w");
+	if (!configFile) {
+		Serial.println("No se puede abrir el fichero de configuracion");
+	}
+
+	//json.prettyPrintTo(Serial);
+	json.printTo(configFile);
+	configFile.close();
+	//end save
+
+}
+
+
+
+
 #pragma endregion
 
 
+#pragma region COMANDOSSERIAL
+
+// Objetos Comandos
+SerialCommand cmd_SSID("SSID", cmd_SSID_hl);
+SerialCommand cmd_Password("Password", cmd_Password_hl);
+SerialCommand cmd_MQTTSrv("MQTTSrv", cmd_MQTTSrv_hl);
+SerialCommand cmd_MQTTUser("MQTTUser", cmd_MQTTUser_hl);
+SerialCommand cmd_MQTTPassword("MQTTPassword", cmd_MQTTPassword_hl);
+SerialCommand cmd_SaveConfig("SaveConfig", cmd_SaveConfig_hl);
+
+
+// Manejadores de los comandos. Aqui dentro lo que queramos hacer con cada comando.
+void cmd_SSID_hl(SerialCommands* sender)
+{
+	
+	char* parametro = sender->Next();
+	if (parametro == NULL)
+	{
+		sender->GetSerial()->println("ERROR, falta un parametro");
+		return;
+	}
+
+	sender->GetSerial()->println("SSID: " + String(parametro));
+}
+
+void cmd_Password_hl(SerialCommands* sender)
+{
+
+	char* parametro = sender->Next();
+	if (parametro == NULL)
+	{
+		sender->GetSerial()->println("ERROR, falta un parametro");
+		return;
+	}
+
+	sender->GetSerial()->println("Password: " + String(parametro));
+}
+
+void cmd_MQTTSrv_hl(SerialCommands* sender)
+{
+
+	char* parametro = sender->Next();
+	if (parametro == NULL)
+	{
+		sender->GetSerial()->println("MQTTSrv: " + String(mqtt_server));
+		return;
+	}
+
+	ClienteMQTT.setHost(parametro);
+	strcpy(mqtt_server, parametro);
+	
+	sender->GetSerial()->println("MQTTSrv: " + String(parametro));
+}
+
+void cmd_MQTTUser_hl(SerialCommands* sender)
+{
+
+	char* parametro = sender->Next();
+	if (parametro == NULL)
+	{
+		sender->GetSerial()->println("MQTTUser: " + String(mqtt_usuario));
+		return;
+	}
+
+	strcpy(mqtt_usuario, parametro);
+	
+	sender->GetSerial()->println("MQTTUser: " + String(parametro));
+}
+
+void cmd_MQTTPassword_hl(SerialCommands* sender)
+{
+
+	char* parametro = sender->Next();
+	if (parametro == NULL)
+	{
+		sender->GetSerial()->println("MQTTPassword: " + String(mqtt_password));
+		return;
+	}
+
+	strcpy(mqtt_password, parametro);
+
+	sender->GetSerial()->println("MQTTPassword: " + String(parametro));
+}
+
+void cmd_SaveConfig_hl(SerialCommands* sender)
+{
+
+	SalvaConfig();
+
+}
+
+
+// Manejardor para comandos desconocidos
+void cmd_error(SerialCommands* sender, const char* cmd)
+{
+	sender->GetSerial()->print("ERROR: No se reconoce el comando [");
+	sender->GetSerial()->print(cmd);
+	sender->GetSerial()->println("]");
+}
+
+// Buffer para los comandos
+char serial_command_buffer_[32];
+
+// Bind del objeto con el puerto serie usando el buffer
+SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_command_buffer_), "\r\n", " ");
+
+
+#pragma endregion
+
+
+
+
+void setup() {
+
+	Serial.begin(115200);
+	Serial.println();
+
+	// Añadir los comandos al objeto manejador de comandos serie
+	serial_commands_.AddCommand(&cmd_SSID);
+	serial_commands_.AddCommand(&cmd_Password);
+	serial_commands_.AddCommand(&cmd_MQTTSrv);
+	serial_commands_.AddCommand(&cmd_MQTTUser);
+	serial_commands_.AddCommand(&cmd_MQTTPassword);
+	serial_commands_.AddCommand(&cmd_SaveConfig);
+	
+	// Manejador para los comandos Serie no reconocidos.
+	serial_commands_.SetDefaultHandler(&cmd_error);
+
+	   
+	// Para el Estado del controlador
+	EstadoControlador = HWOffline;
+
+
+	// Formatear el sistema de ficheros SPIFFS
+	// SPIFFS.format();
+
+	// Leer la configuracion que hay en el archivo de configuracion config.json
+	Serial.println("Leyendo fichero de configuracion");
+	LeeConfig();
+	   	
 
 #pragma region WIFI
 
@@ -350,15 +509,18 @@ void setup() {
 	// Teoricamente tambien quiero que despues del timeout del AP salga del wifimanager del todo para que siga el programa sin wifi ya lo mostrare por el display.
 	Serial.println("Intentando Conectar a la Wifi .....");
 
+
 	if (!wifiManager.autoConnect("BMDomo1", "BMDomo1")) {
 
 		Serial.println("WIFI Autoconect Fallido");
 	}
 
+
 	else {
 
 		Serial.println("WIFI Autoconnect OK. SSID: " + String (WiFi.SSID()));
 	}
+
 
 	// Leer los parametros custom que tiene el wifimanager por si los he actualizado yo en modo AP
 	strcpy(mqtt_server, custom_mqtt_server.getValue());
@@ -366,27 +528,13 @@ void setup() {
 	strcpy(mqtt_topic, custom_mqtt_topic.getValue());
 
 
-	// Salvar los parametros custom 
+	// Salvar la configuracion en el fichero de configuracion
 	if (shouldSaveConfig) {
-		Serial.println("Salvando la configuracion en el fichero");
-		DynamicJsonBuffer jsonBuffer;
-		JsonObject& json = jsonBuffer.createObject();
-		json["mqtt_server"] = mqtt_server;
-		json["mqtt_port"] = mqtt_port;
-		json["mqtt_topic"] = mqtt_topic;
-		json["mqtt_usuario"] = mqtt_usuario;
-		json["mqtt_password"] = mqtt_password;
 
-		File configFile = SPIFFS.open("/config.json", "w");
-		if (!configFile) {
-			Serial.println("No se puede abrir el fichero de configuracion");
-		}
-
-		//json.prettyPrintTo(Serial);
-		json.printTo(configFile);
-		configFile.close();
-		//end save
+		SalvaConfig();
 	}
+
+
 
 	Serial.println("Configuracion de Red:");
 	Serial.print("IP: ");
@@ -397,7 +545,7 @@ void setup() {
 	Serial.println(WiFi.gatewayIP());
 	
 	// Construir el cliente MQTT con el objeto cliente de la red wifi y combiar opciones
-	ClienteMQTT.begin("92.176.93.21", 1883, Clientered);
+	ClienteMQTT.begin(mqtt_server, 1883, Clientered);
 	ClienteMQTT.setOptions(5, true, 3000);
 
 	// Esperar un poquito para que se acabe de conectar la wifi bien
@@ -429,14 +577,15 @@ void setup() {
 	
 #pragma endregion
 
-	
 
+	// Arrancar Tickers de 30s
+	Tick30s.attach(30, CambiaFlagsTicker30s);
+	
 	Serial.println("Terminado Setup. Iniciando Loop");
 
 	// Habilitar WatchDog
-	// wdt_enable(WDTO_4S);
-
-
+	 wdt_enable(WDTO_500MS);
+	 
 }
 
 
@@ -471,9 +620,13 @@ void loop() {
 	
 	// Loop del Controlador del Stepper
 	ControladorStepper.run(); // Esto hay que llamar para que "run ...."
+
+	// Loop de leer comandos por el puerto serie
+	serial_commands_.ReadSerial();
+
 		
 	// Resetear contador de WatchDog
-	//wdt_reset();
+	wdt_reset();
 
 }
 
