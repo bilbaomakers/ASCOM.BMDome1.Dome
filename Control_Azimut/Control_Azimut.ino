@@ -11,13 +11,12 @@
 // Author:		Diego Maroto - BilbaoMakers 2019 - info@bilbaomakers.org
 
 
+
 // Cosas a hacer en el futuro
 /*
 
 		- Implementar uno a varios Led WS2812 para informar del estado de lo importante
-		- Implementar un boton o algo para forzar el portal del WifiManager por si hay que cambiar la config del MQTT
-		
-
+				
 */
 
 
@@ -34,6 +33,7 @@
 #include <ArduinoJson.h>				// OJO: Tener instalada una version NO BETA (a dia de hoy la estable es la 5.13.4). Alguna pata han metido en la 6
 #include <string>						// Para el manejo de cadenas
 #include <Ticker.h>						// Para los "eventos periodicos"	
+
 
 
 #pragma region Estructuras y Enumeraciones
@@ -89,6 +89,7 @@ bool shouldSaveConfig = false;
 
 boolean Tick30s_f = false;
 
+
 #pragma endregion
 
 
@@ -116,6 +117,8 @@ AccelStepper ControladorStepper;
 
 // Objeto para el estado del controlador
 EnumEstadoControlador EstadoControlador;
+
+
 
 
 #pragma endregion
@@ -304,53 +307,61 @@ void SalvaConfig() {
 	//json.prettyPrintTo(Serial);
 	json.printTo(configFile);
 	configFile.close();
+	Serial.println("Configuracion Salvada");
 	//end save
 
 }
 
 
-
-
 #pragma endregion
 
 
-#pragma region COMANDOSSERIAL
+#pragma region COMANDOS_SERIAL
 
 // Objetos Comandos
-SerialCommand cmd_SSID("SSID", cmd_SSID_hl);
-SerialCommand cmd_Password("Password", cmd_Password_hl);
+SerialCommand cmd_WIFI("WIFI", cmd_WIFI_hl);
 SerialCommand cmd_MQTTSrv("MQTTSrv", cmd_MQTTSrv_hl);
 SerialCommand cmd_MQTTUser("MQTTUser", cmd_MQTTUser_hl);
 SerialCommand cmd_MQTTPassword("MQTTPassword", cmd_MQTTPassword_hl);
 SerialCommand cmd_SaveConfig("SaveConfig", cmd_SaveConfig_hl);
 
+// Buffer para los comandos. Gordote para el comando Wifi que lleva parametros gordos.
+char serial_command_buffer_[120];
+
+// Bind del objeto con el puerto serie usando el buffer
+SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_command_buffer_), "\r\n", " ");
+
 
 // Manejadores de los comandos. Aqui dentro lo que queramos hacer con cada comando.
-void cmd_SSID_hl(SerialCommands* sender)
+void cmd_WIFI_hl(SerialCommands* sender)
 {
 	
-	char* parametro = sender->Next();
-	if (parametro == NULL)
+	char* parametro1 = sender->Next();
+	if (parametro1 == NULL)
 	{
-		sender->GetSerial()->println("ERROR, falta un parametro");
+		sender->GetSerial()->println("SSID: " + WiFi.SSID() + " Password: " + WiFi.psk());
 		return;
 	}
 
-	sender->GetSerial()->println("SSID: " + String(parametro));
-}
-
-void cmd_Password_hl(SerialCommands* sender)
-{
-
-	char* parametro = sender->Next();
-	if (parametro == NULL)
+	char* parametro2 = sender->Next();
+	if (parametro2 == NULL)
 	{
-		sender->GetSerial()->println("ERROR, falta un parametro");
+		sender->GetSerial()->println("SSID: " + WiFi.SSID() + " Password: " + WiFi.psk());
 		return;
 	}
 
-	sender->GetSerial()->println("Password: " + String(parametro));
+	char buffer_ssid[30];
+	char buffer_passwd[100];
+
+	String(parametro1).toCharArray(buffer_ssid, sizeof(buffer_ssid));
+	String(parametro2).toCharArray(buffer_passwd, sizeof(buffer_passwd));
+		
+	sender->GetSerial()->println("Conectando a la Wifi. SSID: " + String(buffer_ssid) + " Password: " + String(buffer_passwd));
+	
+	WiFi.begin(buffer_ssid, buffer_passwd);
+	
 }
+
 
 void cmd_MQTTSrv_hl(SerialCommands* sender)
 {
@@ -414,11 +425,6 @@ void cmd_error(SerialCommands* sender, const char* cmd)
 	sender->GetSerial()->println("]");
 }
 
-// Buffer para los comandos
-char serial_command_buffer_[32];
-
-// Bind del objeto con el puerto serie usando el buffer
-SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_command_buffer_), "\r\n", " ");
 
 
 #pragma endregion
@@ -432,8 +438,7 @@ void setup() {
 	Serial.println();
 
 	// Añadir los comandos al objeto manejador de comandos serie
-	serial_commands_.AddCommand(&cmd_SSID);
-	serial_commands_.AddCommand(&cmd_Password);
+	serial_commands_.AddCommand(&cmd_WIFI);
 	serial_commands_.AddCommand(&cmd_MQTTSrv);
 	serial_commands_.AddCommand(&cmd_MQTTUser);
 	serial_commands_.AddCommand(&cmd_MQTTPassword);
@@ -505,23 +510,43 @@ void setup() {
 	// Timeout para que si no configuramos el portal AP se cierre
 	wifiManager.setTimeout(300);
 
-	// Funcion autoConnect. Intenta conectar a la WIFI con los parametros de la EEPROM y si no puede o no hay entra en modo AP con SSID CONTROLADORBM y contraseña maker
-	// Teoricamente tambien quiero que despues del timeout del AP salga del wifimanager del todo para que siga el programa sin wifi ya lo mostrare por el display.
+	
+	// Gestion de la conexion a la Wifi, Si NO estamos conectados por puerto serie lanza el portatl del WifiManager
 	Serial.println("Intentando Conectar a la Wifi .....");
 
+	if (Serial) {
 
-	if (!wifiManager.autoConnect("BMDomo1", "BMDomo1")) {
+		if (!WiFi.begin() == WL_CONNECTED) {
 
-		Serial.println("WIFI Autoconect Fallido");
+			Serial.println("Conexion Wifi OK. SSID: " + String(WiFi.SSID()));
+
+		}
+
+		else {
+
+			Serial.println("Conexion Wifi Fallida. Reconfigurala mediante comando WIFI");
+
+		}
+
 	}
-
-
+		
 	else {
 
-		Serial.println("WIFI Autoconnect OK. SSID: " + String (WiFi.SSID()));
+		if (wifiManager.autoConnect("BMDomo1", "BMDomo1")) {
+
+			Serial.println("Conexion Wifi OK. SSID: " + String(WiFi.SSID()));
+			
+		}
+
+		else {
+
+			Serial.println("Conexion Wifi Fallida.");
+			
+		}
+
 	}
-
-
+	
+	
 	// Leer los parametros custom que tiene el wifimanager por si los he actualizado yo en modo AP
 	strcpy(mqtt_server, custom_mqtt_server.getValue());
 	strcpy(mqtt_port, custom_mqtt_port.getValue());
@@ -591,21 +616,32 @@ void setup() {
 
 
 void loop() {
-  
-	
+  	
 	// Loop del cliente MQTT
 	ClienteMQTT.loop();
 
-	
+
+	// Ticker cada 30 segundos
 	if (Tick30s_f) {
 
-		if (!ClienteMQTT.connected()) {
+		
+		if (WiFi.status() != WL_CONNECTED) {
 
+
+			Serial.println("HORROR!!: No estamos conectados a la WIFI.");
+			//WiFi.begin();
+
+		}
+		
+		
+		else if (WiFi.status() == WL_CONNECTED && !ClienteMQTT.connected()) {
+
+				
 			Serial.println("HORROR!!: No estamos conectados al MQTT.");
 			ConectarMQTT();
 
 		}
-
+					   
 		else
 		{
 
