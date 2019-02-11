@@ -20,7 +20,6 @@
 */
 
 
-
 #include <SerialCommands.h>				// Libreria para la gestion de comandos por el puerto serie https://github.com/ppedro74/Arduino-SerialCommands
 #include <MQTT.h>						// Libreria MQTT (2 includes): https://github.com/256dpi/arduino-mqtt
 #include <MQTTClient.h>
@@ -36,24 +35,13 @@
 
 
 
-#pragma region Estructuras y Enumeraciones
+#pragma region Definiciones
 
-// Enum para el estado del controlador
-typedef enum EnumEstadoControlador {
-	HWOffline,
-	HWReady
-};
-
-// Estructura para los elementos de la configuracion del Domo
-typedef struct DomeConfiguration {
-	long int PasosParaGiroCompleto;
-	float HomeAzimuth;
-	float ParkAzimuth;
-	bool IsReversed;
-	float Checksum;
-} dome_config;
-
-
+// Para el estado del controlador
+#define ESTADO_CONTROLADOR_ERROR 0
+#define ESTADO_CONTROLADOR_OFFLINE 1
+#define ESTADO_CONTROLADOR_READY 2
+	
 
 
 # pragma endregion
@@ -116,9 +104,7 @@ int value = 0;
 AccelStepper ControladorStepper;
 
 // Objeto para el estado del controlador
-EnumEstadoControlador EstadoControlador;
-
-
+int EstadoControlador;
 
 
 #pragma endregion
@@ -162,10 +148,8 @@ void ConectarMQTT() {
 		ClienteMQTT.onMessage(MsgRecibido);
 
 		
-
-
 		// Si llegamos hasta aqui es estado del controlador es Ready
-		EstadoControlador = HWReady;
+		EstadoControlador = ESTADO_CONTROLADOR_READY;
 		Serial.println("Controlador en estado: " + String(EstadoControlador));
 		// Enviar topic de Info
 		SendInfo();
@@ -313,6 +297,18 @@ void SalvaConfig() {
 }
 
 
+void ImprimeInfoRed() {
+
+	Serial.println("Configuracion de Red:");
+	Serial.print("IP: ");
+	Serial.println(WiFi.localIP());
+	Serial.print("      ");
+	Serial.println(WiFi.subnetMask());
+	Serial.print("GW: ");
+	Serial.println(WiFi.gatewayIP());
+
+}
+
 #pragma endregion
 
 
@@ -430,6 +426,52 @@ void cmd_error(SerialCommands* sender, const char* cmd)
 #pragma endregion
 
 
+#pragma region CLASE_DOMO
+
+// Definicion de la clase y sus objetos
+class BMDomo1
+{
+
+
+private:
+	
+
+
+public:
+	BMDomo1();		// Constructor
+	~BMDomo1() {}; //  Destructor
+
+	//  Variables Publicas
+	bool DriverOK;			// Si estamos conectados al driver
+	bool Moviendose;		// Si el motor esta en marcha
+	bool BuscandoCasa;		// Buscando Home
+	bool Calibrando;		// Calibrando
+	bool EnHome;			// Si esta parada en HOME
+		
+	// Funciones Publicas
+	
+			
+};
+
+
+
+// Implementacion de los objetos de la clase
+
+// Constructor
+BMDomo1::BMDomo1() {
+
+	DriverOK = false;
+	Moviendose = false;
+	BuscandoCasa = false;
+	Calibrando = false;
+	EnHome = false;
+	
+}
+
+
+#pragma endregion
+
+
 
 
 void setup() {
@@ -448,8 +490,8 @@ void setup() {
 	serial_commands_.SetDefaultHandler(&cmd_error);
 
 	   
-	// Para el Estado del controlador
-	EstadoControlador = HWOffline;
+	// Para el Estado del controlador. Inicializamos en Offline
+	EstadoControlador = ESTADO_CONTROLADOR_OFFLINE;
 
 
 	// Formatear el sistema de ficheros SPIFFS
@@ -561,13 +603,7 @@ void setup() {
 
 
 
-	Serial.println("Configuracion de Red:");
-	Serial.print("IP: ");
-	Serial.println(WiFi.localIP());
-	Serial.print("      ");
-	Serial.println(WiFi.subnetMask());
-	Serial.print("GW: ");
-	Serial.println(WiFi.gatewayIP());
+	
 	
 	// Construir el cliente MQTT con el objeto cliente de la red wifi y combiar opciones
 	ClienteMQTT.begin(mqtt_server, 1883, Clientered);
@@ -581,9 +617,10 @@ void setup() {
 		
 		Serial.println("Estoy conectado a la WIFI. Conectando al Broker MQTT");
 		
-		ConectarMQTT();
-						
+		ImprimeInfoRed();
 		
+		ConectarMQTT();
+								
 	}
 
 #pragma endregion
