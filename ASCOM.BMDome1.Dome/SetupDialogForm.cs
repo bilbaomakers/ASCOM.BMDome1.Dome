@@ -130,6 +130,7 @@ namespace ASCOM.BMDome1
               .WithTcpServer(TxtServidor.Text)
               .WithCredentials(TxtUsuario.Text, TxtPassword.Text)
               .WithCleanSession()
+              .WithCommunicationTimeout(new TimeSpan(5000))
               .Build();
 
 

@@ -31,8 +31,8 @@ using ASCOM.DeviceInterface;
 using System.Globalization;
 using System.Collections;
 
-using MQTTnet;
-using MQTTnet.Client;
+using MQTTnet;     
+using MQTTnet.Client; // https://github.com/chkr1011/MQTTnet/wiki/Client
 using MQTTnet.Diagnostics;
 
 
@@ -57,19 +57,13 @@ namespace ASCOM.BMDome1
     [ClassInterface(ClassInterfaceType.None)]
     public class Dome : IDomeV2
     {
-        /// <summary>
-        /// ASCOM DeviceID (COM ProgID) for this driver.
-        /// The DeviceID is used by ASCOM applications to load the driver at runtime.
-        /// </summary>
+
+        // Mis Objetos para este ambito (el del driver, u sea todo ....)
+
+        // Info
         internal static string driverID = "ASCOM.BMDome1.Dome";
-        // TODO Change the descriptive string for your driver then remove this line
-        /// <summary>
-        /// Driver description that displays in the ASCOM Chooser.
-        /// </summary>
         private static string driverDescription = "Domo BilbaoMakers Version 1.0.0";
-
-
-        // Mis Objetos para este ambito (el del driver)
+                
         // Para mi gestor de configuraciones
         private Configuracion miconfiguracion;
 
@@ -77,94 +71,80 @@ namespace ASCOM.BMDome1
         private MqttClient lMqttClient;
         private MqttFactory lMqttFactory;
         private IMqttClientOptions lIMqttClientOptions;
-
+        private MqttApplicationMessage MensajeLWT;
+        
         private static readonly string TopicStatus = "/STAUS";
         private static readonly string TopicComando = "/CMD";
         private static readonly string TopicLWTDriver = "/DRIVER/LWT";
         private static readonly string TopicLWTHardware = "/HARDWARE/LWT";
 
-        private static MqttApplicationMessage MensajeLWT;
-
-               
-        /// <summary>
-        /// Variable para almacenar el estado conectado
-        /// </summary>
+        // Variable para almacenar el estado conectado
         private bool connectedState;
+        
+        //private AstroUtils astroUtilities;
 
-
-        /// <summary>
-        /// Private variable to hold an ASCOM Utilities object
-        /// </summary>
-        private Util utilities;
-
-        /// <summary>
-        /// Private variable to hold an ASCOM AstroUtilities object to provide the Range method
-        /// </summary>
-        private AstroUtils astroUtilities;
-
-
-
-        /// <summary>
-        /// Variable to hold the trace logger object (creates a diagnostic log file with information that you specify)
-        /// </summary>
+        // El tracelogger, que me lo ha creado el asistente y de momento no se donde lo tira ya mirare a ver
         internal static TraceLogger tl;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BMDome1"/> class.
-        /// Must be public for COM registration.
-        /// </summary>
+
+        // Constructor de la clase
         public Dome()
         {
+            // El tracelogger
             tl = new TraceLogger("", "BMDome1");
-            //ReadProfile(); // Read device configuration from the ASCOM Profile store
-
+            
+            // mensajito de iniciando
             tl.LogMessage("Dome", "Starting initialisation");
 
+
             connectedState = false; // Initialise connected to false
-            utilities = new Util(); //Initialise util object
-            astroUtilities = new AstroUtils(); // Initialise astro utilities object
+            // No lo uso borrar
+            //utilities = new Util(); //Initialise util object
+            //astroUtilities = new AstroUtils(); // Initialise astro utilities object
             //TODO: Implement your additional construction here
+
 
             // En el constructor del Driver inicializo objetos que me hagan falta luego
 
             // Mi Configuracion
             miconfiguracion = new Configuracion(driverID);
 
-            // Los del MQTT
+            // Los objetos del MQTT
             lMqttFactory = new MqttFactory();
             lMqttClient = (MqttClient)lMqttFactory.CreateMqttClient();
+            MensajeLWT = new MqttApplicationMessage();
 
+            
+
+
+            // Incluido el mensajito de LWT
             MensajeLWT.Topic = miconfiguracion.TopicBase + TopicLWTDriver;
-            MensajeLWT.Payload = Encoding.ASCII.GetBytes("DLC");      // Mensaje Driver Lost Connection
+            MensajeLWT.Payload = Encoding.ASCII.GetBytes("Offline");      // Mensaje LWT de Offline
             MensajeLWT.Retain = true;
             MensajeLWT.QualityOfServiceLevel = MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce;
+            
 
+            // Y opciones de la comunicacion MQTT
             lIMqttClientOptions = (IMqttClientOptions)new MqttClientOptionsBuilder()
               .WithClientId(miconfiguracion.IdCliente)
               .WithTcpServer(miconfiguracion.ServidorMQTT)
               .WithCredentials(miconfiguracion.Usuario, miconfiguracion.Password)
               .WithWillMessage(MensajeLWT)
+              .WithCommunicationTimeout(new TimeSpan(5000))
               .WithKeepAlivePeriod(new TimeSpan(10000))
               .WithCleanSession()
               .Build();
-                        
+          
+
+
             tl.LogMessage("Dome", "Completed initialisation");
         }
+                       
+        
+        #region Propiedades y Metodos
 
-
-
-        //
-        // PUBLIC COM INTERFACE IDomeV2 IMPLEMENTATION
-        //
-
-        #region Common properties and methods.
-
-        /// <summary>
-        /// Displays the Setup Dialog form.
-        /// If the user clicks the OK button to dismiss the form, then
-        /// the new settings are saved, otherwise the old values are reloaded.
-        /// THIS IS THE ONLY PLACE WHERE SHOWING USER INTERFACE IS ALLOWED!
-        /// </summary>
+        // El formulario de SETUP
+        // El unico sitio donde el driver puede interactuar con el usuario.
         public void SetupDialog()
         {
             // consider only showing the setup dialog if not connected
@@ -181,8 +161,7 @@ namespace ASCOM.BMDome1
                 }
             }
         }
-
-
+        
         // De momento no devolvemos ninguna "Supported Action" extra
         public ArrayList SupportedActions
         {
@@ -222,8 +201,11 @@ namespace ASCOM.BMDome1
             // DO NOT have both these sections!  One or the other
         }
 
-        // AQUI SE SUPONE QUE HAY QUE PONER LA COMUNICACIONES CON EL HW
+
+
+        // AQUI SE SUPONE QUE HAY QUE PONER LA COMUNICACIONES CON EL HW y llamar esta funcion segun recomienda ASCOM
         public string CommandString(string command, bool raw)
+
         {
             CheckConnected("CommandString");
             // it's a good idea to put all the low level communication with the device here,
@@ -235,7 +217,7 @@ namespace ASCOM.BMDome1
 
 
         }
-
+               
 
         // Esto es para destruir la instancia del Driver. Lo dejamos como esta de momento.
         public void Dispose()
@@ -244,14 +226,11 @@ namespace ASCOM.BMDome1
             tl.Enabled = false;
             tl.Dispose();
             tl = null;
-            utilities.Dispose();
-            utilities = null;
-            astroUtilities.Dispose();
-            astroUtilities = null;
+            
         }
 
 
-        // La propiedad Conected. Es el estado de la Variable PRIVADA IsConected
+        // La propiedad Conected. Es el estado de la Variable PRIVADA IsConected, y lo que hay que hacer para conectar.
         public bool Connected
         {
             // Leerla es facil .....
@@ -275,45 +254,75 @@ namespace ASCOM.BMDome1
                 // Si en el set me estan poniendo el valor a true .....
                 if (value)
                 {
-                    connectedState = true;
-                    tl.LogMessage("Connected Set", "Conectando al control");
+                    
                     
                     // Intentar conexion con servidor MQTT
                     try
                     {
 
+                        
+                        
+                        // Callback de lo que hace cuando conecta
                         lMqttClient.Connected += delegate (object client, MqttClientConnectedEventArgs e1)
                         {
 
-
+                            // Json de INFO
                             DriverInfo lDriverInfo = new DriverInfo();
+                            // Y publicarlo
                             lMqttClient.PublishAsync(miconfiguracion.TopicBase + "/INFO", lDriverInfo.Json());
+                            // Publicar un ONLINE en el LWT
+                            lMqttClient.PublishAsync(miconfiguracion.TopicBase + "/DRIVER/LWT", "Online", MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce, true);
 
-                        
+                            // Suscribirme al topic de los comandos
+                            lMqttClient.SubscribeAsync(TopicComando, MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce);
+                            // Y al LWT que publica el HW
+                            lMqttClient.SubscribeAsync(TopicLWTHardware, MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce);
+
+
                         };
 
 
+                        // Conectar
                         lMqttClient.ConnectAsync(lIMqttClientOptions);
 
+
+                        // Y si todo OK .....                          
+                        connectedState = true;
+                        tl.LogMessage("Connected Set", "Conectado al control");
+
                     }
+
+
 
                     // Si falla la conexion con servidor MQTT .....
                     catch (MQTTnet.Exceptions.MqttCommunicationException f)
                     {
 
-                        
+                        connectedState = false;
+                        tl.LogMessage("Connected Set", "ERROR Conectando al control");
 
                     }
 
-
-
+                
                 }
+
+
+                // Si me estan poniendo el valor a False (orden de desconectar)
                 else
                 {
                     connectedState = false;
                     tl.LogMessage("Connected Set", "Desconectando del control");
-                    // TODO disconnect from the device
+
+                    // Desconectar del HW
+                    lMqttClient.PublishAsync(miconfiguracion.TopicBase + "/DRIVER/LWT", "Offline", MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce, true);
+
+                    lMqttClient.PublishAsync(miconfiguracion.TopicBase + "/INFO", "Sayonara Baby ....");
+                    lMqttClient.DisconnectAsync();
+                    
+                    // Nota El servidor manda Automaticamente el LWT Offine
+
                 }
+
             }
         }
 
@@ -372,7 +381,9 @@ namespace ASCOM.BMDome1
 
         #endregion
 
-        #region IDome Implementation
+
+
+        #region Implementacion IDome
 
         private bool domeShutterState = false; // Variable to hold the open/closed status of the shutter, true = Open
 
@@ -581,9 +592,10 @@ namespace ASCOM.BMDome1
 
         #endregion
 
-        #region Private properties and methods
-        // here are some useful properties and methods that can be used as required
-        // to help with driver development
+
+
+        #region Metodos y propiedades PRIVADOS
+        
 
         #region ASCOM Registration
 
@@ -674,6 +686,8 @@ namespace ASCOM.BMDome1
 
         }
 
+             
+
 
 
         #endregion
@@ -704,50 +718,8 @@ namespace ASCOM.BMDome1
         }
 
 
-        /*
-         * 
-         * Esto esta quitado porque NO lo hago aqui lo hago en mi objeto de configuracion (lo del leer y escribir el profile)
-         * 
-        
-
-
-        /// <summary>
-        /// Read the device configuration from the ASCOM Profile store
-        /// </summary>
-        internal void ReadProfile()
-        {
-            using (Profile driverProfile = new Profile())
-            {
-                driverProfile.DeviceType = "Dome";
-            }
-        }
-
-        /// <summary>
-        /// Write the device configuration to the  ASCOM  Profile store
-        /// </summary>
-        
-
-        internal void WriteProfile()
-        {
-            using (Profile driverProfile = new Profile())
-            {
-                driverProfile.DeviceType = "Dome";
-            }
-        }
-
-        /// <summary>
-        /// Log helper function that takes formatted strings and arguments
-        /// </summary>
-        /// <param name="identifier"></param>
-        /// <param name="message"></param>
-        /// <param name="args"></param>
-        internal static void LogMessage(string identifier, string message, params object[] args)
-        {
-            var msg = string.Format(message, args);
-            tl.LogMessage(identifier, msg);
-        }
-        */
                
         #endregion
     }
+
 }

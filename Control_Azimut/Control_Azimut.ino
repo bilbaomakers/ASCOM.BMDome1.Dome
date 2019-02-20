@@ -68,6 +68,14 @@ char mqtt_topic[33] = "";
 char mqtt_usuario[19] = "";
 char mqtt_password[19] = "";
 
+// Variables internas string para los topics
+
+String CMDTopic;
+String LWTTopic;
+String STATETopic;
+String INFOTopic;
+
+
 // flag para saber si tenemos que salvar los datos en el fichero de configuracion.
 bool shouldSaveConfig = false;
 //bool shouldSaveConfig = true;
@@ -602,12 +610,14 @@ void setup() {
 	}
 
 
-
-	
 	
 	// Construir el cliente MQTT con el objeto cliente de la red wifi y combiar opciones
 	ClienteMQTT.begin(mqtt_server, 1883, Clientered);
-	ClienteMQTT.setOptions(5, true, 3000);
+	ClienteMQTT.setOptions(5, true, 30000);
+	// Definir topic de will con su payload y sus opciones
+	ClienteMQTT.setWill((String(mqtt_topic) + "/LWT").c_str(), "Offline", true, 2);
+
+
 
 	// Esperar un poquito para que se acabe de conectar la wifi bien
 	delay(500);
