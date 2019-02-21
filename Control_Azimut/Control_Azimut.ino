@@ -241,11 +241,14 @@ void ConectarMQTT() {
 		// funcion para manejar los MSG MQTT entrantes
 		ClienteMQTT.onMessage(MsgRecibido);
 
+		// Informar por puerto serie del topic LWT
+		Serial.println("Topic LWT: " + (teleTopic + "/LWT"));
 		
 		// Si llegamos hasta aqui es estado del controlador es Ready
 		EstadoControlador = ESTADO_CONTROLADOR_READY;
-		Serial.println("Controlador en estado: " + String(EstadoControlador));
-				
+		Serial.println("Controlador Azimut Iniciado Correctamente");
+		
+		
 		// Publicar un Online en el LWT
 		ClienteMQTT.publish(teleTopic + "/LWT", "Online", true, 2);
 
@@ -543,6 +546,7 @@ void setup() {
 	serial_commands_.AddCommand(&cmd_MQTTSrv);
 	serial_commands_.AddCommand(&cmd_MQTTUser);
 	serial_commands_.AddCommand(&cmd_MQTTPassword);
+	serial_commands_.AddCommand(&cmd_MQTTTopic);
 	serial_commands_.AddCommand(&cmd_SaveConfig);
 	serial_commands_.AddCommand(&cmd_Prueba);
 	
@@ -656,22 +660,20 @@ void setup() {
 		SalvaConfig();
 	}
 
-		
-	// Construir el cliente MQTT con el objeto cliente de la red wifi y combiar opciones
-	ClienteMQTT.begin(mqtt_server, 1883, Clientered);
-	ClienteMQTT.setOptions(5, false, 3000);
-	// Definir topic de will con su payload y sus opciones
-	//ClienteMQTT.setWill((teleTopic + "/LWT").c_str(), "Offline", true, 2);
-	ClienteMQTT.setWill("tele/BMDomo1/LWT", "Offline", true, 2);
-
 	// Dar valor a las strings con los nombres de la estructura de los topics
 	cmndTopic = "cmnd/" + String(mqtt_topic) + "/#";
 	statTopic = "stat/" + String(mqtt_topic);
 	teleTopic = "tele/" + String(mqtt_topic);
-
+			
+	// Construir el cliente MQTT con el objeto cliente de la red wifi y combiar opciones
+	ClienteMQTT.begin(mqtt_server, 1883, Clientered);
+	ClienteMQTT.setOptions(5, false, 3000);
+	
+	// Crear el topic LWT
+	ClienteMQTT.setWill((teleTopic + "/LWT").c_str(), "Offline", true, 2);
 
 	// Esperar un poquito para que se acabe de conectar la wifi bien
-	delay(500);
+	delay(2000);
 
 	// Si la conexion a la wifi es OK ......
 	if (WiFi.status() == WL_CONNECTED) {
@@ -701,13 +703,12 @@ void setup() {
 #pragma endregion
 
 	
-	Serial.println("Terminado Setup. Iniciando Loop");
 
 	// Habilitar WatchDog
-	 wdt_enable(WDTO_500MS);
+	wdt_enable(WDTO_500MS);
 	
-	 // Temporizador 1
-	 millis1 = millis();
+	// Temporizador 1
+	millis1 = millis();
 
 }
 
