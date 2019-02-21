@@ -1,4 +1,9 @@
 
+/// INICIO DEL PROGRAMA ///
+
+
+#pragma region COMENTARIOS
+
 // Controlador ASCOM para BMDome1
 //
 // Description:	Driver para controlador de Domo desarrollado por Bilbaomakers
@@ -19,6 +24,10 @@
 				
 */
 
+#pragma endregion
+
+
+#pragma region Includes de librerias usadas por el proyecto
 
 #include <SerialCommands.h>				// Libreria para la gestion de comandos por el puerto serie https://github.com/ppedro74/Arduino-SerialCommands
 #include <MQTT.h>						// Libreria MQTT (2 includes): https://github.com/256dpi/arduino-mqtt
@@ -31,11 +40,11 @@
 #include <WiFiManager.h>				// Para la gestion avanzada de la wifi
 #include <ArduinoJson.h>				// OJO: Tener instalada una version NO BETA (a dia de hoy la estable es la 5.13.4). Alguna pata han metido en la 6
 #include <string>						// Para el manejo de cadenas
-#include <Ticker.h>						// Para los "eventos periodicos"	
+
+#pragma endregion
 
 
-
-#pragma region Definiciones
+#pragma region Constantes
 
 // Para el estado del controlador
 #define ESTADO_CONTROLADOR_ERROR 0
@@ -68,31 +77,25 @@ char mqtt_topic[33] = "";
 char mqtt_usuario[19] = "";
 char mqtt_password[19] = "";
 
-// Variables internas string para los topics
-
-String CMDTopic;
-String LWTTopic;
-String STATETopic;
-String INFOTopic;
+// Variables internas string para los nombres de los topics. Se les da valor luego al final del setup()
+// El de comandos al que me voy a suscribir para "escuchar".
+String cmndTopic;
+// Y estos como son para publicar, defino la raiz de la jerarquia. Luego cuando publique ya añado al topic lo que necesite (por ejemplo tele/AZIMUT/LWT , etc ...)
+String statTopic;
+String teleTopic;
 
 
 // flag para saber si tenemos que salvar los datos en el fichero de configuracion.
 bool shouldSaveConfig = false;
 //bool shouldSaveConfig = true;
 
-
-// flags que cambian los tickers (porque no hay que llamar a cosas asincronas como MQTT Publish desde las callback de los tickers, lio de interrupciones y catacarsh)
-
-boolean Tick30s_f = false;
-
+// Para los timers
+unsigned long millis1;
 
 #pragma endregion
 
 
 #pragma region Objetos
-
-// Objetos Ticker
-Ticker Tick30s;				// Para hacer cosas cada 30 segundos
 
 
 // Wifimanager (aqui para que se vea tambien en el Loop)
@@ -118,123 +121,19 @@ int EstadoControlador;
 #pragma endregion
 
 
-#pragma region Funciones
+#pragma region Funciones de la aplicacion
 
+
+#pragma region funciones de gestion de la configuracion
 // Funcion Callback disparada por el WifiManager para que sepamos que hay que hay una nueva configuracion que salvar (para los custom parameters).
 void saveConfigCallback() {
 	Serial.println("Lanzado SaveConfigCallback");
 	shouldSaveConfig = true;
 }
 
-// Funcion lanzada cuando entra en modo AP
-void APCallback(WiFiManager *wifiManager) {
-	Serial.println("Lanzado APCallback");
-	Serial.println(WiFi.softAPIP());
-	Serial.println(wifiManager->getConfigPortalSSID());
-}
-
-// Para conectar al servidor MQTT y suscribirse a los topics
-void ConectarMQTT() {
-
-	// Intentar conectar al controlador MQTT.
-	if (ClienteMQTT.connect("ControladorAZ", mqtt_usuario, mqtt_password, false)) {
-
-		Serial.println("Conectado al MQTT");
-
-		// Suscribirse al topic de Entrada de Comandos
-		if (ClienteMQTT.subscribe(String(mqtt_topic) + "/CMD", 2)) {
-
-			// Si suscrito correctamente
-			Serial.println("Suscrito al topic " + String(mqtt_topic) + "/CMD");
-									
-
-		}
-		else { Serial.println("Error Suscribiendome al topic " + String(mqtt_topic) + "/CMD"); }
-
-			   
-		// funcion para manejar los MSG entrantes
-		ClienteMQTT.onMessage(MsgRecibido);
-
-		
-		// Si llegamos hasta aqui es estado del controlador es Ready
-		EstadoControlador = ESTADO_CONTROLADOR_READY;
-		Serial.println("Controlador en estado: " + String(EstadoControlador));
-		// Enviar topic de Info
-		SendInfo();
-
-	}
-
-	else {
-
-		Serial.println("Error Conectando al MQTT: " + String(ClienteMQTT.lastError()));
-		//Serial.println("Estado del Connected:" + String(ClienteMQTT.connected()));
-
-	}
-
-
-}
-
-
-void CambiaFlagsTicker30s() {
-
-	Tick30s_f = true;
-
-}
-
-
-// Para enviar el JSON de estado al topic INFO. Serializa un JSON a partir de un OBJETO
-void SendInfo() {
-	
-	
-	// Crear un Buffer para los objetos a serializar, en este caso y de momento uno estatico para 3 objetos
-	const int capacity = JSON_OBJECT_SIZE(3);
-	StaticJsonBuffer<capacity> jBuffer;
-
-	// Aqui creamos el objeto "generico" y vacio JsonObject que usaremos desde aqui
-	JsonObject& jObj = jBuffer.createObject();
-
-	jObj.set("HWAInf", HardwareInfo);
-	jObj.set("HWASta", EstadoControlador);
-	
-
-	// Crear el Array de valores JSON
-	//JsonArray& cadena = jObj.createNestedArray("cadena");
-
-	// Crear un buffer donde almacenar la cadena de texto del JSON
-	char JSONmessageBuffer[100];
-
-	// Tirar al buffer la cadena de objetos serializada en JSON
-	jObj.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
-	
-
-	// Publicarla en el post de INFO
-	ClienteMQTT.publish(String(mqtt_topic) + "/INFO", JSONmessageBuffer,false,2);
-	
-	Serial.println(JSONmessageBuffer);
-		
-	}
-
-
-
-// Funcion para movel el Azimut de la cupula
-void MueveCupula(int Azimut) {
-
-	ControladorStepper.moveTo(Azimut); // El Moveto Mueve pasos. Yo aqui paso el azimut. Hacer la conversion segun pasos por grado antes
-
-}
-
-
-// Funcion que se ejecuta cuando recibo un mensage MQTT. Decodificar aqui dentro.
-void MsgRecibido(String &topic, String &payload) {
-
-	Serial.println("MSG Recibido en el topic: " + topic);
-	Serial.println("Payload: " + payload);
-
-}
-
 
 // Funcion para leer la configuracion desde el fichero de configuracion
-void LeeConfig (){
+void LeeConfig() {
 
 
 	if (SPIFFS.begin()) {
@@ -304,30 +203,129 @@ void SalvaConfig() {
 
 }
 
+#pragma endregion
 
-void ImprimeInfoRed() {
 
-	Serial.println("Configuracion de Red:");
-	Serial.print("IP: ");
-	Serial.println(WiFi.localIP());
-	Serial.print("      ");
-	Serial.println(WiFi.subnetMask());
-	Serial.print("GW: ");
-	Serial.println(WiFi.gatewayIP());
+#pragma region Funciones de gestion de las conexiones Wifi y MQTT
+
+
+
+// Funcion lanzada cuando entra en modo AP
+void APCallback(WiFiManager *wifiManager) {
+	Serial.println("Lanzado APCallback");
+	Serial.println(WiFi.softAPIP());
+	Serial.println(wifiManager->getConfigPortalSSID());
+}
+
+
+// Para conectar al servidor MQTT y suscribirse a los topics
+void ConectarMQTT() {
+
+	// Intentar conectar al controlador MQTT.
+	if (ClienteMQTT.connect("ControladorAZ", mqtt_usuario, mqtt_password, false)) {
+
+		Serial.println("Conectado al MQTT");
+
+		// Suscribirse al topic de Entrada de Comandos
+		if (ClienteMQTT.subscribe(cmndTopic, 2)) {
+
+			// Si suscrito correctamente
+			Serial.println("Suscrito al topic " + cmndTopic);
+									
+
+		}
+		
+		else { Serial.println("Error Suscribiendome al topic " + cmndTopic); }
+
+			   
+		// funcion para manejar los MSG MQTT entrantes
+		ClienteMQTT.onMessage(MsgRecibido);
+
+		
+		// Si llegamos hasta aqui es estado del controlador es Ready
+		EstadoControlador = ESTADO_CONTROLADOR_READY;
+		Serial.println("Controlador en estado: " + String(EstadoControlador));
+				
+		// Publicar un Online en el LWT
+		ClienteMQTT.publish(teleTopic + "/LWT", "Online", true, 2);
+
+		// Enviar el JSON de info al topic 
+		SendInfo();
+
+	}
+
+	else {
+
+		Serial.println("Error Conectando al MQTT: " + String(ClienteMQTT.lastError()));
+		
+	}
+
+}
+
+
+// Funcion que se ejecuta cuando recibo un mensage MQTT. Decodificar aqui dentro.
+void MsgRecibido(String &topic, String &payload) {
+
+	Serial.println("MSG Recibido en el topic: " + topic);
+	Serial.println("Payload: " + payload);
+
+}
+
+
+
+#pragma endregion
+
+
+#pragma region Funciones de implementacion de los comandos disponibles por MQTT
+
+// Para enviar el JSON de estado al topic INFO. Lanzada por el ticker o a peticion con el comando ESTADO
+void SendInfo() {
+	
+	
+	// Crear un Buffer para los objetos a serializar, en este caso y de momento uno estatico para 3 objetos
+	const int capacity = JSON_OBJECT_SIZE(3);
+	StaticJsonBuffer<capacity> jBuffer;
+
+	// Aqui creamos el objeto "generico" y vacio JsonObject que usaremos desde aqui
+	JsonObject& jObj = jBuffer.createObject();
+
+	jObj.set("HWAInf", HardwareInfo);
+	jObj.set("HWASta", EstadoControlador);
+
+	// Crear un buffer donde almacenar la cadena de texto del JSON
+	char JSONmessageBuffer[100];
+
+	// Tirar al buffer la cadena de objetos serializada en JSON
+	jObj.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+	
+
+	// Publicarla en el post de INFO
+	ClienteMQTT.publish(teleTopic + "/INFO", JSONmessageBuffer,false,2);
+	
+	Serial.println(JSONmessageBuffer);
+		
+	}
+
+// Funcion para movel el Azimut de la cupula
+void MueveCupula(int Azimut) {
+
+	ControladorStepper.moveTo(Azimut); // El Moveto Mueve pasos. Yo aqui paso el azimut. Hacer la conversion segun pasos por grado antes
 
 }
 
 #pragma endregion
 
 
-#pragma region COMANDOS_SERIAL
+#pragma region Funciones de implementacion de los comandos disponibles por el puerto serie
 
 // Objetos Comandos
 SerialCommand cmd_WIFI("WIFI", cmd_WIFI_hl);
 SerialCommand cmd_MQTTSrv("MQTTSrv", cmd_MQTTSrv_hl);
 SerialCommand cmd_MQTTUser("MQTTUser", cmd_MQTTUser_hl);
 SerialCommand cmd_MQTTPassword("MQTTPassword", cmd_MQTTPassword_hl);
+SerialCommand cmd_MQTTTopic("MQTTTopic", cmd_MQTTTopic_hl);
 SerialCommand cmd_SaveConfig("SaveConfig", cmd_SaveConfig_hl);
+SerialCommand cmd_Prueba("Prueba", cmd_Prueba_hl);
 
 // Buffer para los comandos. Gordote para el comando Wifi que lleva parametros gordos.
 char serial_command_buffer_[120];
@@ -339,7 +337,7 @@ SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_c
 // Manejadores de los comandos. Aqui dentro lo que queramos hacer con cada comando.
 void cmd_WIFI_hl(SerialCommands* sender)
 {
-	
+
 	char* parametro1 = sender->Next();
 	if (parametro1 == NULL)
 	{
@@ -359,11 +357,11 @@ void cmd_WIFI_hl(SerialCommands* sender)
 
 	String(parametro1).toCharArray(buffer_ssid, sizeof(buffer_ssid));
 	String(parametro2).toCharArray(buffer_passwd, sizeof(buffer_passwd));
-		
+
 	sender->GetSerial()->println("Conectando a la Wifi. SSID: " + String(buffer_ssid) + " Password: " + String(buffer_passwd));
-	
+
 	WiFi.begin(buffer_ssid, buffer_passwd);
-	
+
 }
 
 
@@ -379,9 +377,10 @@ void cmd_MQTTSrv_hl(SerialCommands* sender)
 
 	ClienteMQTT.setHost(parametro);
 	strcpy(mqtt_server, parametro);
-	
+
 	sender->GetSerial()->println("MQTTSrv: " + String(parametro));
 }
+
 
 void cmd_MQTTUser_hl(SerialCommands* sender)
 {
@@ -394,9 +393,10 @@ void cmd_MQTTUser_hl(SerialCommands* sender)
 	}
 
 	strcpy(mqtt_usuario, parametro);
-	
+
 	sender->GetSerial()->println("MQTTUser: " + String(parametro));
 }
+
 
 void cmd_MQTTPassword_hl(SerialCommands* sender)
 {
@@ -413,10 +413,33 @@ void cmd_MQTTPassword_hl(SerialCommands* sender)
 	sender->GetSerial()->println("MQTTPassword: " + String(parametro));
 }
 
+void cmd_MQTTTopic_hl(SerialCommands* sender)
+{
+
+	char* parametro = sender->Next();
+	if (parametro == NULL)
+	{
+		sender->GetSerial()->println("MQTTTopic: " + String(mqtt_topic));
+		return;
+	}
+
+	strcpy(mqtt_topic, parametro);
+
+	sender->GetSerial()->println("MQTTTopic: " + String(parametro));
+}
+
+
 void cmd_SaveConfig_hl(SerialCommands* sender)
 {
 
 	SalvaConfig();
+
+}
+
+void cmd_Prueba_hl(SerialCommands* sender)
+{
+
+	SendInfo();
 
 }
 
@@ -434,9 +457,32 @@ void cmd_error(SerialCommands* sender, const char* cmd)
 #pragma endregion
 
 
-#pragma region CLASE_DOMO
+#pragma region Otras funciones Auxiliares
 
-// Definicion de la clase y sus objetos
+
+// Funcion que imprime la informacion de la red por el puerto serie
+void ImprimeInfoRed() {
+
+	Serial.println("Configuracion de Red:");
+	Serial.print("IP: ");
+	Serial.println(WiFi.localIP());
+	Serial.print("      ");
+	Serial.println(WiFi.subnetMask());
+	Serial.print("GW: ");
+	Serial.println(WiFi.gatewayIP());
+
+}
+
+
+#pragma endregion	
+
+
+#pragma endregion
+
+
+#pragma region CLASE_DOMO. Clase principial para el objeto de conexion con el Driver. 
+
+// Definicion de la clase y sus objetos. Probablemente vaya creciendo e detrimento de funciones de la aplicacion
 class BMDomo1
 {
 
@@ -480,10 +526,15 @@ BMDomo1::BMDomo1() {
 #pragma endregion
 
 
+#pragma region Funcion Setup() y Loop() de ARDUINO
 
-
+// funcion SETUP de Arduino
 void setup() {
 
+	// Para el Estado del controlador. Inicializamos en Offline
+	EstadoControlador = ESTADO_CONTROLADOR_OFFLINE;
+
+		
 	Serial.begin(115200);
 	Serial.println();
 
@@ -493,16 +544,12 @@ void setup() {
 	serial_commands_.AddCommand(&cmd_MQTTUser);
 	serial_commands_.AddCommand(&cmd_MQTTPassword);
 	serial_commands_.AddCommand(&cmd_SaveConfig);
+	serial_commands_.AddCommand(&cmd_Prueba);
 	
 	// Manejador para los comandos Serie no reconocidos.
 	serial_commands_.SetDefaultHandler(&cmd_error);
 
-	   
-	// Para el Estado del controlador. Inicializamos en Offline
-	EstadoControlador = ESTADO_CONTROLADOR_OFFLINE;
-
-
-	// Formatear el sistema de ficheros SPIFFS
+	// Formatear el sistema de ficheros SPIFFS (para limipar el ESP)
 	// SPIFFS.format();
 
 	// Leer la configuracion que hay en el archivo de configuracion config.json
@@ -510,7 +557,7 @@ void setup() {
 	LeeConfig();
 	   	
 
-#pragma region WIFI
+#pragma region Configuracion e inicializacion de la WIFI y el MQTT
 
 	// Añadir al wifimanager parametros para el MQTT
 	WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40);
@@ -609,14 +656,18 @@ void setup() {
 		SalvaConfig();
 	}
 
-
-	
+		
 	// Construir el cliente MQTT con el objeto cliente de la red wifi y combiar opciones
 	ClienteMQTT.begin(mqtt_server, 1883, Clientered);
-	ClienteMQTT.setOptions(5, true, 30000);
+	ClienteMQTT.setOptions(5, false, 3000);
 	// Definir topic de will con su payload y sus opciones
-	ClienteMQTT.setWill((String(mqtt_topic) + "/LWT").c_str(), "Offline", true, 2);
+	//ClienteMQTT.setWill((teleTopic + "/LWT").c_str(), "Offline", true, 2);
+	ClienteMQTT.setWill("tele/BMDomo1/LWT", "Offline", true, 2);
 
+	// Dar valor a las strings con los nombres de la estructura de los topics
+	cmndTopic = "cmnd/" + String(mqtt_topic) + "/#";
+	statTopic = "stat/" + String(mqtt_topic);
+	teleTopic = "tele/" + String(mqtt_topic);
 
 
 	// Esperar un poquito para que se acabe de conectar la wifi bien
@@ -649,29 +700,32 @@ void setup() {
 	
 #pragma endregion
 
-
-	// Arrancar Tickers de 30s
-	Tick30s.attach(30, CambiaFlagsTicker30s);
 	
 	Serial.println("Terminado Setup. Iniciando Loop");
 
 	// Habilitar WatchDog
 	 wdt_enable(WDTO_500MS);
-	 
+	
+	 // Temporizador 1
+	 millis1 = millis();
+
 }
 
 
-
+// Funcion LOOP de Arduino
 void loop() {
   	
+	
+	
 	// Loop del cliente MQTT
 	ClienteMQTT.loop();
+	   
 
+	// Funcion para "hacer cosas periodicamente".
 
-	// Ticker cada 30 segundos
-	if (Tick30s_f) {
+	if ((millis() - millis1) >= 10000) {
 
-		
+		// Comprobar si estamos conectados a la Wifi y si no reconectar
 		if (WiFi.status() != WL_CONNECTED) {
 
 
@@ -680,7 +734,7 @@ void loop() {
 
 		}
 		
-		
+		// Comprobar si estamos conectados a la wifi pero no al MQTT e intentar reconectar
 		else if (WiFi.status() == WL_CONNECTED && !ClienteMQTT.connected()) {
 
 				
@@ -689,6 +743,7 @@ void loop() {
 
 		}
 					   
+		// Y si estamos conectados a los dos enviar el JSON de Info
 		else
 		{
 
@@ -697,12 +752,15 @@ void loop() {
 		}
 		
 				
-		Tick30s_f = false;
+		//Actualizar la variable millis1 para contar otro periodo nuevo
+		millis1 = millis();
 
 	}
 	
+
 	// Loop del Controlador del Stepper
 	ControladorStepper.run(); // Esto hay que llamar para que "run ...."
+
 
 	// Loop de leer comandos por el puerto serie
 	serial_commands_.ReadSerial();
@@ -713,7 +771,7 @@ void loop() {
 
 }
 
+#pragma endregion
 
 
-
-
+/// FIN DEL PROGRAMA ///
