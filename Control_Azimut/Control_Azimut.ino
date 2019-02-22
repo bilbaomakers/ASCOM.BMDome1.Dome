@@ -54,20 +54,34 @@
 #pragma endregion
 
 
-#pragma region Constantes y configuracion
+#pragma region Constantes y configuracion. Modificable aqui por el usuario
 
 // Para el estado del controlador
-#define ESTADO_CONTROLADOR_ERROR 0
-#define ESTADO_CONTROLADOR_OFFLINE 1
-#define ESTADO_CONTROLADOR_READY 2
+//#define ESTADO_CONTROLADOR_ERROR 0
+//#define ESTADO_CONTROLADOR_OFFLINE 1
+//#define ESTADO_CONTROLADOR_READY 2
 
 
 // Para la configuracion de conjunto Mecanico de arrastre
-#define MECANICA_PASOS_POR_VUELTA_MOTOR = 200		// Numero de pasos por vuelta del STEPPER
-#define MECANICA_MICROPASOS_CONTROLADORA = 64		// Numero de micropasos en la controladora
-#define MECANICA_RATIO_REDUCTORA = 6				// Ratio de reduccion de la reductora
-#define MECANICA_DIENTES_PINON_ATAQUE = 15			// Numero de dientes del piños de ataque
-#define MECANICA_DIENTES_CREMALLERA_CUPULA = 500	// Numero de dientes de la cremallera de la cupula
+static const uint8_t MECANICA_STEPPER_PULSEPIN = D2;				// Pin de pulsos del stepper
+static const uint8_t MECANICA_STEPPER_DIRPIN = D1;					// Pin de direccion del stepper
+static const uint8_t MECANICA_STEPPER_ENABLEPING = D0;				// Pin de enable del stepper
+static const float MECANICA_STEPPER_MAXSPEED = 500;					// Velocidad maxima del stepper
+static const float MECANICA_STEPPER_MAXACELERAION = 100;			// Aceleracion maxima del stepper
+static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 200;			// Numero de pasos por vuelta del STEPPER
+static const short MECANICA_MICROPASOS_CONTROLADORA = 64;			// Numero de micropasos en la controladora
+static const short MECANICA_RATIO_REDUCTORA = 6;					// Ratio de reduccion de la reductora
+static const short MECANICA_DIENTES_PINON_ATAQUE = 15;				// Numero de dientes del piños de ataque
+static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 500;		// Numero de dientes de la cremallera de la cupula
+
+// Otros sensores
+static const uint8_t MECANICA_SENSOR_HOME = D5;						// Pin para el sensor de HOME
+
+
+// Valores para los Tickers
+unsigned long TIEMPO_TICKER_LENTO = 10000;
+unsigned long TIEMPO_TICKER_RAPIDO = 1000;
+
 
 # pragma endregion
 
@@ -76,15 +90,16 @@
 
 
 // Estructura para la configuracion del Stepper de Azimut
-struct STEPPERCFG
+struct MECANICACFG
 {
 
 	// Variables para el Stepper
-	uint8_t StepperPulse = D2;
-	uint8_t StepperDir = D1;
-	uint8_t StepperEnable = D0;
-	float StepperMaxSpeed = 500;
-	float StepperAceleration = 100;
+	uint8_t StepperPulse = MECANICA_STEPPER_PULSEPIN;
+	uint8_t StepperDir = MECANICA_STEPPER_DIRPIN;
+	uint8_t StepperEnable = MECANICA_STEPPER_ENABLEPING;
+	float StepperMaxSpeed = MECANICA_STEPPER_MAXSPEED;
+	float StepperAceleration = MECANICA_STEPPER_MAXACELERAION;
+
 
 } MiConfigStepper;
 
@@ -115,7 +130,7 @@ bool shouldSaveConfig = false;
 //bool shouldSaveConfig = true;
 
 // Para los timers
-unsigned long millis1;
+// unsigned long millis1;
 
 #pragma endregion
 
@@ -171,12 +186,17 @@ public:
 	bool EnHome;								// Si esta parada en HOME
 	bool MecanicaOK;							// Si estamos listos para la operacion (toda la mecanica esta ready e inicializada)
 	int curr_azimut;							// Azimut actual de la cupula
+	unsigned long TickerLento;					// Ticker lento (envio de JSON Info, Reconexiones, etc .....)
+	unsigned long TickerRapido;					// Otro Ticker para cosas mas rapidas
+	// Contadores de tiempos
+
 
 	// Funciones Publicas
 
 	bool MueveCupula(int azimut);				// Mover la cupula a un azimut
 	bool IniciaCupula();						// Inicializar la cupula
 	bool BuscaHome();							// Mueve la cupula a Home
+	void Run();					// Actualiza las propiedades de estado de este objeto en funcion del estado de motores y sensores
 
 };
 
@@ -196,7 +216,8 @@ BMDomo1::BMDomo1() {
 	Calibrando = false;
 	EnHome = false;
 	MecanicaOK = false;
-
+	TickerLento = millis();
+	TickerRapido = millis();
 }
 
 
@@ -214,12 +235,8 @@ bool BMDomo1::IniciaCupula() {
 		// Activar el motor
 		ControladorStepper.enableOutputs();
 		
-		// Busca Home y comprobar que se ha buscado bien
-		if (BuscaHome()) {
-			
-			MecanicaOK = true;
-
-		}
+		// Busca Home
+		BuscaHome();
 			   
 	}
 
@@ -245,9 +262,84 @@ bool BMDomo1::MueveCupula(int target_azimut) {
 }
 
 
+// Funcion que mueve la cupula para buscar Home
 bool BMDomo1::BuscaHome() {
 
+	if (!ControladorStepper.isRunning && !EnHome) {
 
+		ControladorStepper.setCurrentPosition(0);									// Posicion a 0 y resetea tambien las velocidades
+		ControladorStepper.setSpeed = MiConfigStepper.StepperMaxSpeed;				// Velocidad Maxima
+		ControladorStepper.setAcceleration = MiConfigStepper.StepperAceleration;	// Aceleracion
+
+		BuscandoCasa = true;
+		Moviendose = true;
+
+		ControladorStepper.moveTo(360);												// Mover la cupula a posicion 360 (de momento seran 360 steps ya calcularemos esto)
+
+	}
+
+	else if (!ControladorStepper.isRunning && EnHome)
+	{
+
+		BuscandoCasa = false;
+		Moviendose = false;
+		return true;
+
+	}
+		
+
+}
+
+
+// Esta funcion se lanza desde el loop todo lo rapido posible y NO DEBE ATRANCARSE NUNCA NI RALENTIZAR EL PROGRAMA. AFECTA AL RESTO
+void BMDomo1::Run() {
+
+	// Aqui las cosas que tenemos que hacer tan rapido como sea posible
+	Moviendose = ControladorStepper.isRunning;	// Actualiza la propiedad Moviendose con el estado del driver
+	EnHome = digitalRead(MECANICA_SENSOR_HOME); // Actualiza la propiedad EnHome con el sensor FISICO de home
+	
+	// Aqui las cosas que hay que hacer cada TICKER_RAPIDO
+	if ((millis() - TickerRapido) >= TIEMPO_TICKER_RAPIDO) {
+
+		// DE MOMENTO NINGUNA PERO YA QUE ME HE PUESTO A IMPLEMENTAR TICKERS HE PUESTO DOS
+
+	}
+	
+	// Aqui las cosas que tenemos que hacer cada TICKER LENTO
+	if ((millis() - TickerRapido) >= TIEMPO_TICKER_LENTO ) {
+
+		// Comprobar si estamos conectados a la Wifi y si no reconectar SOLO SI NO NOS ESTAMOS MOVIENDO
+		if (WiFi.status() != WL_CONNECTED && !ControladorStepper.isRunning()) {
+
+
+			Serial.println("HORROR!!: No estamos conectados a la WIFI.");
+			//WiFi.begin();
+
+		}
+
+		// Comprobar si estamos conectados a la wifi pero no al MQTT e intentar reconectar SOLO SI NO NOS ESTAMOS MOVIENDO
+		else if (WiFi.status() == WL_CONNECTED && !ClienteMQTT.connected() && !ControladorStepper.isRunning()) {
+
+
+			Serial.println("HORROR!!: No estamos conectados al MQTT.");
+			ConectarMQTT();
+
+		}
+
+		// Y si estamos conectados a los dos enviar el JSON de Info (Aqui no importa si nos estamos moviendo porque esta CREO que es Asincrona
+		else
+		{
+
+			SendInfo();
+
+		}
+		
+
+		
+		//Actualizar los tickers
+		TickerLento = millis();
+		TickerRapido = millis();
+	}
 
 }
 
@@ -472,6 +564,7 @@ String ManejadorComandos(String comando, String parametros) {
 		Serial.println("Comando: " + comando);
 		Serial.println("Parametro: " + parametros);
 
+		// COMANDO GOTO
 		if (comando == "GOTO") {
 
 			// Mover la cupula
@@ -479,15 +572,15 @@ String ManejadorComandos(String comando, String parametros) {
 
 		}
 
+		// COMANDO STATUS
 		else if (comando == "STATUS") {
 
 			SendInfo();
-			MandaRespuesta(comando, "JSON enviado al topic de INFO");
+			MandaRespuesta(comando, "OK");
 
 		}
 
-
-
+		
 	}
 
 	else {
@@ -854,14 +947,10 @@ void setup() {
 #pragma endregion
 
 	
-	
 
 	// Habilitar WatchDog
 	wdt_enable(WDTO_500MS);
 	
-	// Temporizador 1
-	millis1 = millis();
-
 
 }
 
@@ -870,47 +959,13 @@ void setup() {
 void loop() {
   	
 	
+	// Loop del objeto Cupula
+	MiCupula.Run();
+		
 	
 	// Loop del cliente MQTT
 	ClienteMQTT.loop();
 	   
-
-	// Funcion para "hacer cosas periodicamente".
-
-	if ((millis() - millis1) >= 10000) {
-
-		// Comprobar si estamos conectados a la Wifi y si no reconectar
-		if (WiFi.status() != WL_CONNECTED) {
-
-
-			Serial.println("HORROR!!: No estamos conectados a la WIFI.");
-			//WiFi.begin();
-
-		}
-		
-		// Comprobar si estamos conectados a la wifi pero no al MQTT e intentar reconectar
-		else if (WiFi.status() == WL_CONNECTED && !ClienteMQTT.connected()) {
-
-				
-			Serial.println("HORROR!!: No estamos conectados al MQTT.");
-			ConectarMQTT();
-
-		}
-					   
-		// Y si estamos conectados a los dos enviar el JSON de Info
-		else
-		{
-
-			SendInfo();
-
-		}
-		
-				
-		//Actualizar la variable millis1 para contar otro periodo nuevo
-		millis1 = millis();
-
-	}
-	
 
 	// Loop del Controlador del Stepper
 	ControladorStepper.run(); // Esto hay que llamar para que "run ...."
