@@ -68,10 +68,10 @@
 static const uint8_t MECANICA_STEPPER_PULSEPIN = D2;				// Pin de pulsos del stepper
 static const uint8_t MECANICA_STEPPER_DIRPIN = D1;					// Pin de direccion del stepper
 static const uint8_t MECANICA_STEPPER_ENABLEPING = D0;				// Pin de enable del stepper
-static const float MECANICA_STEPPER_MAXSPEED = 500;					// Velocidad maxima del stepper
-static const float MECANICA_STEPPER_MAXACELERAION = 100;			// Aceleracion maxima del stepper
+static const float MECANICA_STEPPER_MAXSPEED = 1000;				// Velocidad maxima del stepper (pasos por segundo)
+static const float MECANICA_STEPPER_MAXACELERAION = 300;			// Aceleracion maxima del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 200;			// Numero de pasos por vuelta del STEPPER
-static const short MECANICA_MICROPASOS_CONTROLADORA = 64;			// Numero de micropasos en la controladora
+static const short MECANICA_MICROPASOS_CONTROLADORA = 2;			// Numero de micropasos en la controladora
 static const short MECANICA_RATIO_REDUCTORA = 6;					// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 15;				// Numero de dientes del piños de ataque
 static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 500;		// Numero de dientes de la cremallera de la cupula
@@ -151,7 +151,6 @@ long lastMsg = 0;
 char msg[50];
 int value = 0;
 
-
 // Controlador Stepper
 AccelStepper ControladorStepper;
 
@@ -164,211 +163,285 @@ Bounce Debouncer_HomeSwitch = Bounce();
 
 #pragma region CLASE BMDomo1 - Clase principial para el objeto que representa la cupula, sus estados, propiedades y acciones
 
-// Definicion de la clase y sus objetos. Probablemente vaya creciendo e detrimento de funciones de la aplicacion
+// Una clase tiene 2 partes:
+// La primera es la definicion de todas las propiedades y metodos, publicos o privados.
+// La segunda es la IMPLEMENTACION de esos metodos o propiedades (que hacen). En C++ mas que nada de los METODOS (que son basicamente funciones)
+
+// Definicion
 class BMDomo1
 {
 
-
+#pragma region DEFINICIONES BMDomo1
 private:
 
-	bool BuscandoCasa;						// Buscando Home
+	// Variables Internas para uso de la clase
+	bool Inicializando;						// Para saber que estamos ejecutando el comando INITHW
+	bool BuscandoCasa;						// Para saber que estamos ejecutando el comando FINDHOME
+	
+	
+	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
+	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
+	// Solo tengo que definirla y cuando cree el objeto de esta clase en mi programa, creo la funcion con esta misma estructura y se la "paso" a la clase
+	// que la usara como se usa cualquier otra funcion y ella sabra que hacer
+
+	typedef void(*RespondeComandoCallback)(String comando, String respuesta);			// Definir como ha de ser la funcion de Callback (que le tengo que pasar y que devuelve)
+	RespondeComandoCallback MiRespondeComandos = nullptr;								// Definir el objeto que va a contener la funcion que vendra de fuera AQUI en la clase.
+
+	typedef void(*EnviaTelemetriaCallback)();											// Lo mismo para la funcion de envio de telemetria
+	EnviaTelemetriaCallback MiEnviadorDeTelemetria = nullptr;
 
 	
-	// Funciones Callback (Eventos)
-	typedef void(*RespondeComandoCallback)(String comando, String respuesta);			// Definir como ha de ser la funcion de Callback
-	RespondeComandoCallback MiRespondeComandos = nullptr;								// Definir el objeto que internamente va a contener la funcion que vendra de fuera
-
-
 public:
 
-	BMDomo1();		// Constructor
-	~BMDomo1() {}; //  Destructor
+	BMDomo1();		// Constructor (es la funcion que devuelve un Objeto de esta clase)
+	~BMDomo1() {};	// Destructor (Destruye el objeto, o sea, lo borra de la memoria)
 
-	//  Variables Publicas. Algunas comentadas porque voy activando las que me hacen falta para no poner de mas.
 
+	//  Variables Publicas
 	String HardwareInfo;						// Identificador del HardWare y Software
-	//bool DriverOK;							// Si estamos conectados al driver del PC y esta OK
+	bool ComOK;									// Si la wifi y la conexion MQTT esta OK
+	bool DriverOK;								// Si estamos conectados al driver del PC y esta OK
 	bool HardwareOK;							// Si nosotros estamos listos para todo (para informar al driver del PC)
 	bool Slewing;								// Si alguna parte del Domo esta moviendose
-	
-	//bool Calibrando;							// Calibrando
 	bool AtHome;								// Si esta parada en HOME
-	//bool MecanicaOK;							// Si estamos listos para la operacion (toda la mecanica esta ready e inicializada)
-	//int curr_azimut;							// Azimut actual de la cupula
+	int Curr_Azimut;							// Azimut actual de la cupula
 	unsigned long TickerLento;					// Ticker lento (envio de JSON Info, Reconexiones, etc .....)
 	unsigned long TickerRapido;					// Otro Ticker para cosas mas rapidas
-	// Contadores de tiempos
-
+												
 
 	// Funciones Publicas
 
-	bool MueveCupula(int azimut);				// Mover la cupula a un azimut
-	bool IniciaCupula();						// Inicializar la cupula
-	bool FindHome();				// Mueve la cupula a Home
-	void Run();									// Actualiza las propiedades de estado de este objeto en funcion del estado de motores y sensores
-	void SetRespondeComandoCallback(RespondeComandoCallback ref); // Definir la funcion para pasarnos la funcion de callback
-	
+	String MiEstadoJson();											// Devuelve un JSON con los estados en un array de 100 chars (la libreria MQTT no puede con mas de 100)
+	void MOVETO(int azimut);										// Mover la cupula a un azimut
+	void IniciaCupula();											// Inicializar la cupula
+	void FINDHOME();												// Mueve la cupula a Home
+	void Run();														// Actualiza las propiedades de estado de este objeto en funcion del estado de motores y sensores
+	void SetRespondeComandoCallback(RespondeComandoCallback ref);	// Definir la funcion para pasarnos la funcion de callback del enviamensajes
+	void SetEnviaTelemetriaCallback(EnviaTelemetriaCallback ref);   // Definir la funcion para pasarnos la funcion de callback del enviaTelemetria
+
 };
 
+#pragma endregion
 
-// Implementacion de los objetos de la clase
 
-// Constructor
-BMDomo1::BMDomo1() {
+#pragma region IMPLEMENTACIONES BMDomo1
+
+// Constructor. Lo que sea que haya que hacer antes de devolver el objeto de esta clase al creador.
+BMDomo1::BMDomo1() {	
 
 	HardwareInfo = "BMDome1.HWAz1.0";
-	//DriverOK = false;
+	Inicializando = false;
+	ComOK = false;
+	DriverOK = false;
 	HardwareOK = false;
 	Slewing = false;			
 	BuscandoCasa = false;
-	//Calibrando = false;
 	AtHome = false;
-	//MecanicaOK = false;
-	//curr_azimut = 0;
 	TickerLento = millis();
 	TickerRapido = millis();
+	
 }
 
-
-// Pasar a esta clase la funcion callback de fuera
+// Pasar a esta clase la funcion callback de fuera. Me la pasan desde el programa con el metodo SetRespondeComandoCallback
 void BMDomo1::SetRespondeComandoCallback(RespondeComandoCallback ref) {
 
 	MiRespondeComandos = (RespondeComandoCallback)ref;
 
 }
 
+// Pasar a esta clase la funcion callback de fuera. Me la pasan desde el programa con el metodo SetEnviaTelemetriaCallback
+void BMDomo1::SetEnviaTelemetriaCallback(EnviaTelemetriaCallback ref) {
 
-// FUNCIONES
-bool BMDomo1::IniciaCupula() {
-
-		// Esto solo informa que hemos entendido el comando no que haya terminado
-		MiRespondeComandos("InitHW", "OK");
-			
-		// Activar el motor. el resto del objeto Stepper ya esta OK
-		ControladorStepper.enableOutputs();
-		ControladorStepper.setCurrentPosition(0);
-						
-		// Busca Home (Asyncrono)
-		FindHome();
-	
+	MiEnviadorDeTelemetria = (EnviaTelemetriaCallback)ref;
 
 }
 
+// Metodo que devuelve un JSON con el estado
+String BMDomo1::MiEstadoJson() {
 
-// Funcion que mueve la cupula para buscar Home. TIENE QUE SER ASINCRONA NEEEEN, y lanzar una funcion cuando termine.
-bool BMDomo1::FindHome() {
+	// Esto crea un objeto de tipo JsonObject para el "contenedor de objetos a serializar". De tamaño Objetos + 1
+	const int capacity = JSON_OBJECT_SIZE(6);
+	StaticJsonBuffer<capacity> jBuffer;
 
-	//Algoritmo para ir a Home y hacer cero. A ver que se nos ocurre ....
+	//DynamicJsonBuffer jBuffer;
 
-	// Primero Verificar si estamos en Home y parados porque entonces estanteria hacer na
+	JsonObject& jObj = jBuffer.createObject();
 
-	if (!Slewing && AtHome) {
+	// Esto llena de objetos de tipo "pareja propiedad valor"
+	jObj.set("HWAInf", HardwareInfo);						// Info del Hardware
+	jObj.set("COMSta", ComOK);								// Info de la conexion WIFI y MQTT
+	jObj.set("DRVSta", DriverOK);							// Info de la comunicacion con el DRIVER ASCOM (o quiza la cambiemos para comunicacion con "cualquier" driver, incluido uno nuestro
+	jObj.set("HWASta", HardwareOK);							// Info del estado de inicializacion de la mecanica
+	jObj.set("Az", ControladorStepper.currentPosition());	// Posicion Actual (de momento en STEPS)
+	
+	// Crear un buffer (aray de 100 char) donde almacenar la cadena de texto del JSON
+	char JSONmessageBuffer[100];
 
-		// Caramba ya estamos en Home y Parados No tenemos que hacer nada
-		MiRespondeComandos("FindHome", "AtHome");
+	// Tirar al buffer la cadena de objetos serializada en JSON con la propiedad printTo del objeto de arriba
+	jObj.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+
+	// devolver el char array con el JSON
+	return JSONmessageBuffer;
+
+}
+
+// Metodos (funciones). TODAS Salvo la RUN() deben ser ASINCRONAS. Jamas se pueden quedar uno esperando. Esperar a lo bobo ESTA PROHIBIDISISISISMO, tenemos MUCHAS cosas que hacer ....
+void BMDomo1::IniciaCupula() {
+
+	Inicializando = true;
+	
+	// Activar el motor. el resto del objeto Stepper ya esta OK
+	ControladorStepper.enableOutputs();
+								
+	// Busca Home (Asyncrono)
+	FINDHOME();
+	
+}
+
+// Funcion que da orden de mover la cupula para esperar HOME.
+void BMDomo1::FINDHOME() {
+
+	
+	// Si la cupula no esta inicializada no hacemos nada mas que avisar
+	if (!HardwareOK && !Inicializando) {
+
+		MiRespondeComandos("FINDHOME", "HW_NOT_INIT");
+		
+	}
+	
+	else {
+
+	
+		// Primero Verificar si estamos en Home y parados porque entonces estanteria hacer na si ya esta todo hecho .....
+		if (!Slewing && AtHome) {
+
+			// Caramba ya estamos en Home y Parados No tenemos que hacer nada
+			MiRespondeComandos("FINDHOME", "ATHOME");
 		
 
-	}
+		}
 
-
-	else if (Slewing) {
+		// Si doy esta orden pero la cupula se esta moviendo .......
+		else if (Slewing) {
 
 		
-		// Mal Asunto no podemos hacer nada, nos estamos moviendo
-		MiRespondeComandos("FindHome", "Slewing");
+			// Que nos estamos moviendo leñe no atosigues .....
+			MiRespondeComandos("FINDHOME", "SLEWING");
+
+		}
+	
+		// Y si estamos parados y NO en Home .....
+		else if (!Slewing && !AtHome){
+
+			MiRespondeComandos("FINDHOME", "OK");
+
+			// Pues aqui si que hay que movernos hasta que encontremos casa y pararnos.
+			// Aqui nos movemos (de momento a lo burro a dar una vuelta entera)
+			MOVETO(360);
+
+			// Pero tenemos que salir de la funcion esta no podemos estar esperando a que de la vuelta asi que activo el flag para saber que "estoy buscando home" y termino
+			BuscandoCasa = true;
+	
+		}
 
 	}
 
+}
 
-	else
-	{
+// Funcion para mover la cupula a una posicion Azimut concreta
+void BMDomo1::MOVETO(int grados) {
 
-		// Pues aqui si que hay que movernos hasta que encontremos casa y pararnos.
-		// Aqui nos movemos
-		MueveCupula(360);
+	// Si la cupula no esta inicializada no hacemos nada mas que avisar
+	if (!HardwareOK && !Inicializando) {
 
-		// Pero tenemos que salir de la funcion esta no podemos estar esperando asi que activo el flag para saber que "estoy buscando home"
-		BuscandoCasa = true;
-
-
+		MiRespondeComandos("GOTO", "HW_NOT_INIT");
+		
 	}
 
+	else {
+
+		// A hacer para mover la cupula a un azimut determinado
+
+		// Primero cambiar el estado Slewing
+		// No lo voy a hacer aqui. Lo hago en el run mirando el objeto stepper mejor, mas eficiente y limpio
+		//Slewing = true;
+
+		// Traducir los grados a pulsos
+		long Pulsos = (MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR * MECANICA_MICROPASOS_CONTROLADORA * grados) / (MECANICA_DIENTES_PINON_ATAQUE * 360);
+
+		ControladorStepper.moveTo(Pulsos);
+
+		MiRespondeComandos("GOTO", "OK " + String(grados) + " " + String(Pulsos));
+
+	}
+	
 
 }
 
-
-
-// Funcion para mover fisicamente la cupula
-bool BMDomo1::MueveCupula(int target_azimut) {
-
-	// A hacer para mover la cupula a un azimut determinado
-	
-	// Primero cambiar el estado Slewing
-	// No lo voy a hacer aqui. Lo hago en el run mirando el objeto stepper mejor, mas eficiente y limpio
-	//Slewing = true;
-	
-	// Aqui hay que echar el calculo de cuantos pasos hay que mover segun la mecanica. De momento para pruebas .....
-	ControladorStepper.moveTo(36000);
-	
-	
-}
-
-
-
-
-// Esta funcion se lanza desde el loop todo lo rapido posible y NO DEBE ATRANCARSE NUNCA NI RALENTIZAR EL PROGRAMA. AFECTA AL RESTO
+// Esta funcion se lanza desde el loop. Es la que hace las comprobaciones. No debe atrancarse nunca tampoco (ni esta ni ninguna)
 void BMDomo1::Run() {
 
 
-	// Comprobaciones de iteracion con el Hardware, lo mas rapido posible que es importante
-	
+	// Comprobaciones de iteracion con el Hardware. Como esto es MUY importante se comprueba siempre que es ejecuta el RUN
+
 	// Una importante es actualizar la propiedad Slewing con el estado del motor paso a paso. 
 	Slewing = ControladorStepper.isRunning();
 
 	// Leer el Switch de HOME y hacer cosas en funcion de otras cosas.
-	// Si esta PULSADO (LOW)
+	// Si esta PULSADO (LOW).
 	if (!Debouncer_HomeSwitch.read()) {
 
+		// Actualizar la propiedad ATHome
 		AtHome = true;
 		
 		// Pero es que ademas si esta pulsado, nos estamos moviendo y estamos "buscando casa" .....
-		// Hay que terminar la operacion de Buscar Casa
 		if (BuscandoCasa && Slewing) {
 
-			ControladorStepper.stop();
-			ControladorStepper.setCurrentPosition(0);
-			// Aqui deberiamos volver para atras despacio el cacho que nos hemos pasado del Switch. Hay que hacer el calculo.
-			BuscandoCasa = false;
-			MiRespondeComandos("FindHome", "AtHome");
+			ControladorStepper.stop();					// Parar el motor que hemos llegado a HOME
+			ControladorStepper.setCurrentPosition(0);	// Poner la posicion a cero ("hacer cero")
+			
+			// Aqui como tenemos aceleraciones va a tardar en parar y nos vamos a pasar de home un cacho (afortunadamente un cacho conocido)
+			// Tendremos que volver para atras despacio el cacho que nos hemos pasado del Switch. Hay que hacer el calculo.
+
+			
+			BuscandoCasa = false;							// Cambiar el flag interno para saber que "ya no estamos buscando casa, ya hemos llegado"
+			MiRespondeComandos("FINDHOME", "ATHOME");		// Responder al comando FINDHOME
+				
+			if (Inicializando) {							// Si ademas estabamos haciendo esto desde el comando INITHW ....
+
+				Inicializando = false;						// Cambiar la variable interna para saber que "ya no estamos inicializando, ya hemos terminado"
+				MiRespondeComandos("INITHW", "READY");	// Responder al comando INITHW
+
+			}
 
 		}
 
-
 	}
-	// Y si no lo esta
+	
+	// Y si no esta pulsado .....
 	else
 	{
-
+		// Actualizamos la propiedad AtHome
 		AtHome = false;
 
 	}
 
+		
 	// Otra cosa a comprobar es si estamos buscando home y el motor se ha parado sin llegar a hacer lo de arriba
 	// Un supuesto raro, pero eso es que no hemos conseguido detectar el switch home
 	if (!Slewing && BuscandoCasa) {
 
-		MiRespondeComandos("FindHome", "Failed");
+		MiRespondeComandos("FINDHOME", "Failed. Azimut Actual: " + ControladorStepper.currentPosition());
 		BuscandoCasa = false;
+		Inicializando = false;
 
 	}
 
-
-
-
-	// Aqui las cosas que hay que hacer cada TICKER_RAPIDO
+	   
+	// Aqui las cosas que hay que hacer cada TICKER_RAPIDO (ni tan rapido como las de arriba ni tan lento como las del TICKER_LENTO
 	if ((millis() - TickerRapido) >= TIEMPO_TICKER_RAPIDO) {
 
-		// DE MOMENTO NINGUNA PERO YA QUE ME HE PUESTO A IMPLEMENTAR TICKERS HE PUESTO DOS
+		// De momento nada
 
 	}
 	
@@ -377,6 +450,7 @@ void BMDomo1::Run() {
 	if ((millis() - TickerRapido) >= TIEMPO_TICKER_LENTO ) {
 
 		// Comprobar si estamos conectados a la Wifi y si no reconectar SOLO SI NO NOS ESTAMOS MOVIENDO
+		// Porque esto no estoy seguro si bloquea el programa y si nos estamos moviendo atender al movimiento es lo mas importante
 		if (WiFi.status() != WL_CONNECTED && !ControladorStepper.isRunning()) {
 
 
@@ -386,6 +460,7 @@ void BMDomo1::Run() {
 		}
 
 		// Comprobar si estamos conectados a la wifi pero no al MQTT e intentar reconectar SOLO SI NO NOS ESTAMOS MOVIENDO
+		// Porque esto no estoy seguro si bloquea el programa y si nos estamos moviendo atender al movimiento es lo mas importante
 		else if (WiFi.status() == WL_CONNECTED && !ClienteMQTT.connected() && !ControladorStepper.isRunning()) {
 
 
@@ -398,12 +473,11 @@ void BMDomo1::Run() {
 		else
 		{
 
-			SendInfo();
-
+			MiEnviadorDeTelemetria();
+			
 		}
 		
-
-		
+				
 		//Actualizar los tickers
 		TickerLento = millis();
 		TickerRapido = millis();
@@ -411,8 +485,11 @@ void BMDomo1::Run() {
 
 }
 
+#pragma endregion
 
-// Objeto de la clase BMDomo1. Es necesario definirlo aqui debajo de la definicion de clase no puedo en la region de arriba donde tengo los demas
+
+// Objeto de la clase BMDomo1. Es necesario definirlo aqui debajo de la definicion de clase. No puedo en la region de arriba donde tengo los demas
+// Eso es porque la clase usa objetos de fuera. Esto es chapuza pero de momento asi no me lio. Despues todo por referencia y la clase esta debajo de los includes o en una libreria a parte. Asi esntonces estaria OK.
 BMDomo1 MiCupula;
 
 
@@ -424,6 +501,7 @@ BMDomo1 MiCupula;
 
 
 #pragma region funciones de gestion de la configuracion
+
 // Funcion Callback disparada por el WifiManager para que sepamos que hay que hay una nueva configuracion que salvar (para los custom parameters).
 void saveConfigCallback() {
 	Serial.println("Lanzado SaveConfigCallback");
@@ -541,8 +619,8 @@ void ConectarMQTT() {
 		// Informar por puerto serie del topic LWT
 		Serial.println("Topic LWT: " + (MiConfigMqtt.teleTopic + "/LWT"));
 		
-		// Si llegamos hasta aqui es estado del controlador es OK
-		MiCupula.HardwareOK = true;
+		// Si llegamos hasta aqui es estado de las comunicaciones con WIFI y MQTT es OK
+		MiCupula.ComOK = true;
 		Serial.println("Controlador Azimut Iniciado Correctamente");
 		
 		
@@ -550,7 +628,7 @@ void ConectarMQTT() {
 		ClienteMQTT.publish(MiConfigMqtt.teleTopic + "/LWT", "Online", true, 2);
 
 		// Enviar el JSON de info al topic 
-		SendInfo();
+		MandaTelemetria();
 
 	}
 
@@ -588,33 +666,6 @@ void MsgRecibido(String &topic, String &payload) {
 
 }
 
-// Para enviar el JSON de estado al topic INFO. Lanzada por el ticker o a peticion con el comando ESTADO
-void SendInfo() {
-	
-	
-	// Crear un Buffer para los objetos a serializar, en este caso y de momento uno estatico para 3 objetos
-	const int capacity = JSON_OBJECT_SIZE(3);
-	StaticJsonBuffer<capacity> jBuffer;
-
-	// Aqui creamos el objeto "generico" y vacio JsonObject que usaremos desde aqui
-	JsonObject& jObj = jBuffer.createObject();
-
-	jObj.set("HWAInf", MiCupula.HardwareInfo);
-	jObj.set("HWASta", MiCupula.HardwareOK);
-
-	// Crear un buffer donde almacenar la cadena de texto del JSON
-	char JSONmessageBuffer[100];
-
-	// Tirar al buffer la cadena de objetos serializada en JSON
-	jObj.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
-	
-
-	// Publicarla en el post de INFO
-	ClienteMQTT.publish(MiConfigMqtt.teleTopic + "/INFO", JSONmessageBuffer,false,2);
-	
-	//Serial.println(JSONmessageBuffer);
-		
-	}
 
 // Maneja un comando con un parametro. De momento salvo necesidad SOLO 1 parametro
 String ManejadorComandos(String comando, String parametros) {
@@ -632,29 +683,28 @@ String ManejadorComandos(String comando, String parametros) {
 		if (comando == "GOTO") {
 
 			// Mover la cupula
-			MiCupula.MueveCupula(parametros.toInt());
+			MiCupula.MOVETO(parametros.toInt());
 
 		}
 
 		// COMANDO STATUS
 		else if (comando == "STATUS") {
 
-			SendInfo();
-			MandaRespuesta(comando, "OK");
-
+			MandaTelemetria();
+			MandaRespuesta("STATUS", "OK");
 		}
 
 		// COMANDO STATUS
-		else if (comando == "FindHome") {
+		else if (comando == "FINDHOME") {
 
 			
-			MiCupula.FindHome();
+			MiCupula.FINDHOME();
 
 
 		}
 
 		// COMANDO STATUS
-		else if (comando == "InitHW") {
+		else if (comando == "INITHW") {
 
 
 			MiCupula.IniciaCupula();
@@ -673,12 +723,21 @@ String ManejadorComandos(String comando, String parametros) {
 
 }
 
+
+
 // Devuelve al topic correspondiente la respuesta a un comando
+// Esta funcion la uso como CALLBACK para el objeto cupula
 void MandaRespuesta(String comando, String respuesta) {
-
-
+				
 	ClienteMQTT.publish(MiConfigMqtt.statTopic + "/" + comando, respuesta, false, 2);
+	
+}
 
+
+// envia al topic tele la telemetria en Json
+void MandaTelemetria() {
+	
+	ClienteMQTT.publish(MiConfigMqtt.teleTopic + "/INFO", MiCupula.MiEstadoJson(), false, 2);
 
 }
 
@@ -811,7 +870,7 @@ void cmd_SaveConfig_hl(SerialCommands* sender)
 void cmd_Prueba_hl(SerialCommands* sender)
 {
 
-	SendInfo();
+	ManejadorComandos("STATUS", "NADA");
 
 }
 
@@ -863,7 +922,8 @@ void setup() {
 	MiCupula = BMDomo1();
 	// Asignar funciones Callback de Micupula
 	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
-	
+	MiCupula.SetEnviaTelemetriaCallback(MandaTelemetria);
+
 	// Puerto Serie
 	Serial.begin(115200);
 	Serial.println();
@@ -1038,7 +1098,6 @@ void setup() {
 #pragma endregion
 
 	
-
 	// Habilitar WatchDog
 	wdt_enable(WDTO_500MS);
 	
@@ -1053,6 +1112,7 @@ void loop() {
 	// Loop de los debouncers
 	Debouncer_HomeSwitch.update();
 	
+
 	// Loop del objeto Cupula
 	MiCupula.Run();
 		
