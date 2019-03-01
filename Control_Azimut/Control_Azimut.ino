@@ -63,27 +63,24 @@
 //#define ESTADO_CONTROLADOR_OFFLINE 1
 //#define ESTADO_CONTROLADOR_READY 2
 
-
 // Para la configuracion de conjunto Mecanico de arrastre
 static const uint8_t MECANICA_STEPPER_PULSEPIN = D2;				// Pin de pulsos del stepper
 static const uint8_t MECANICA_STEPPER_DIRPIN = D1;					// Pin de direccion del stepper
 static const uint8_t MECANICA_STEPPER_ENABLEPING = D0;				// Pin de enable del stepper
+static const boolean MECANICA_STEPPER_INVERTPINS = true;			// Invertir la logica de los pines de control (pulso 1 o pulso 0)
 static const float MECANICA_STEPPER_MAXSPEED = 1000;				// Velocidad maxima del stepper (pasos por segundo)
 static const float MECANICA_STEPPER_MAXACELERAION = 300;			// Aceleracion maxima del stepper
-static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 200;			// Numero de pasos por vuelta del STEPPER
-static const short MECANICA_MICROPASOS_CONTROLADORA = 2;			// Numero de micropasos en la controladora
+static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;			// Numero de pasos por vuelta del STEPPER
 static const short MECANICA_RATIO_REDUCTORA = 6;					// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 15;				// Numero de dientes del piños de ataque
-static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 500;		// Numero de dientes de la cremallera de la cupula
+static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 880;		// Numero de dientes de la cremallera de la cupula
 
 // Otros sensores
 static const uint8_t MECANICA_SENSOR_HOME = D5;						// Pin para el sensor de HOME
 
-
 // Valores para los Tickers
 unsigned long TIEMPO_TICKER_LENTO = 10000;
-unsigned long TIEMPO_TICKER_RAPIDO = 1000;
-
+unsigned long TIEMPO_TICKER_RAPIDO = 2000;
 
 # pragma endregion
 
@@ -204,7 +201,6 @@ public:
 	bool HardwareOK;							// Si nosotros estamos listos para todo (para informar al driver del PC)
 	bool Slewing;								// Si alguna parte del Domo esta moviendose
 	bool AtHome;								// Si esta parada en HOME
-	int Curr_Azimut;							// Azimut actual de la cupula
 	unsigned long TickerLento;					// Ticker lento (envio de JSON Info, Reconexiones, etc .....)
 	unsigned long TickerRapido;					// Otro Ticker para cosas mas rapidas
 												
@@ -212,12 +208,14 @@ public:
 	// Funciones Publicas
 
 	String MiEstadoJson();											// Devuelve un JSON con los estados en un array de 100 chars (la libreria MQTT no puede con mas de 100)
-	void MOVETO(int azimut);										// Mover la cupula a un azimut
-	void IniciaCupula();											// Inicializar la cupula
-	void FINDHOME();												// Mueve la cupula a Home
+	void MoveTo(int azimut);										// Mover la cupula a un azimut
+	void IniciaCupula(String parametros);											// Inicializar la cupula
+	void FindHome();												// Mueve la cupula a Home
+	int GetCurrentAzimut();											// Devuelve el azimut actual de la cupula
 	void Run();														// Actualiza las propiedades de estado de este objeto en funcion del estado de motores y sensores
 	void SetRespondeComandoCallback(RespondeComandoCallback ref);	// Definir la funcion para pasarnos la funcion de callback del enviamensajes
 	void SetEnviaTelemetriaCallback(EnviaTelemetriaCallback ref);   // Definir la funcion para pasarnos la funcion de callback del enviaTelemetria
+	
 
 };
 
@@ -272,7 +270,7 @@ String BMDomo1::MiEstadoJson() {
 	jObj.set("COMSta", ComOK);								// Info de la conexion WIFI y MQTT
 	jObj.set("DRVSta", DriverOK);							// Info de la comunicacion con el DRIVER ASCOM (o quiza la cambiemos para comunicacion con "cualquier" driver, incluido uno nuestro
 	jObj.set("HWASta", HardwareOK);							// Info del estado de inicializacion de la mecanica
-	jObj.set("Az", ControladorStepper.currentPosition());	// Posicion Actual (de momento en STEPS)
+	jObj.set("Az", GetCurrentAzimut());	// Posicion Actual (de momento en STEPS)
 	
 	// Crear un buffer (aray de 100 char) donde almacenar la cadena de texto del JSON
 	char JSONmessageBuffer[100];
@@ -286,20 +284,37 @@ String BMDomo1::MiEstadoJson() {
 }
 
 // Metodos (funciones). TODAS Salvo la RUN() deben ser ASINCRONAS. Jamas se pueden quedar uno esperando. Esperar a lo bobo ESTA PROHIBIDISISISISMO, tenemos MUCHAS cosas que hacer ....
-void BMDomo1::IniciaCupula() {
+void BMDomo1::IniciaCupula(String parametros) {
 
-	Inicializando = true;
+	// Esto es para inicializar forzado si le pasamos parametro FORCE
+	if (parametros == "FORCE") {
+
+		HardwareOK = true;
+		MiRespondeComandos("INITHW", "READY");
+	}
+
+	else {
+
+
+		Inicializando = true;
+
+		// Activar el motor. el resto del objeto Stepper ya esta OK
+		ControladorStepper.enableOutputs();
+
+		// Como el metodo ahora mismo es dar toda la vuelta, hago cero. Si cambio el metodo esto no valdria.
+		ControladorStepper.setCurrentPosition(0);
+
+		// Busca Home (Asyncrono)
+		FindHome();
+
+	}
+
 	
-	// Activar el motor. el resto del objeto Stepper ya esta OK
-	ControladorStepper.enableOutputs();
-								
-	// Busca Home (Asyncrono)
-	FINDHOME();
 	
 }
 
 // Funcion que da orden de mover la cupula para esperar HOME.
-void BMDomo1::FINDHOME() {
+void BMDomo1::FindHome() {
 
 	
 	// Si la cupula no esta inicializada no hacemos nada mas que avisar
@@ -337,7 +352,7 @@ void BMDomo1::FINDHOME() {
 
 			// Pues aqui si que hay que movernos hasta que encontremos casa y pararnos.
 			// Aqui nos movemos (de momento a lo burro a dar una vuelta entera)
-			MOVETO(360);
+			MoveTo(359);
 
 			// Pero tenemos que salir de la funcion esta no podemos estar esperando a que de la vuelta asi que activo el flag para saber que "estoy buscando home" y termino
 			BuscandoCasa = true;
@@ -348,8 +363,19 @@ void BMDomo1::FINDHOME() {
 
 }
 
+// Funcion que devuelva el azimut actual de la cupula
+int BMDomo1::GetCurrentAzimut() {
+
+	long t_azimut;
+	t_azimut = (ControladorStepper.currentPosition() * MECANICA_DIENTES_PINON_ATAQUE * 360) / (MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR);
+	return round(t_azimut);
+
+}
+
 // Funcion para mover la cupula a una posicion Azimut concreta
-void BMDomo1::MOVETO(int grados) {
+void BMDomo1::MoveTo(int grados) {
+
+
 
 	// Si la cupula no esta inicializada no hacemos nada mas que avisar
 	if (!HardwareOK && !Inicializando) {
@@ -360,18 +386,31 @@ void BMDomo1::MOVETO(int grados) {
 
 	else {
 
-		// A hacer para mover la cupula a un azimut determinado
+		// Verificar que los grados no estan fuera de rango
+		if (grados >= 0 && grados <= 359) {
+
+			// A hacer para mover la cupula a un azimut determinado
 
 		// Primero cambiar el estado Slewing
 		// No lo voy a hacer aqui. Lo hago en el run mirando el objeto stepper mejor, mas eficiente y limpio
 		//Slewing = true;
 
 		// Traducir los grados a pulsos
-		long Pulsos = (MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR * MECANICA_MICROPASOS_CONTROLADORA * grados) / (MECANICA_DIENTES_PINON_ATAQUE * 360);
+			long Pulsos = (MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR * grados) / (MECANICA_DIENTES_PINON_ATAQUE * 360);
 
-		ControladorStepper.moveTo(Pulsos);
+			ControladorStepper.moveTo(Pulsos);
 
-		MiRespondeComandos("GOTO", "OK " + String(grados) + " " + String(Pulsos));
+			MiRespondeComandos("GOTO", "OK " + String(grados) + " " + String(Pulsos));
+
+		}
+
+		else {
+			
+			MiRespondeComandos("GOTO", "OUT_OF_RANGE");
+
+		}
+
+		
 
 	}
 	
@@ -431,23 +470,30 @@ void BMDomo1::Run() {
 	// Un supuesto raro, pero eso es que no hemos conseguido detectar el switch home
 	if (!Slewing && BuscandoCasa) {
 
-		MiRespondeComandos("FINDHOME", "Failed. Azimut Actual: " + ControladorStepper.currentPosition());
+		MiRespondeComandos("FINDHOME", "Failed");
 		BuscandoCasa = false;
 		Inicializando = false;
-
+				
 	}
 
 	   
 	// Aqui las cosas que hay que hacer cada TICKER_RAPIDO (ni tan rapido como las de arriba ni tan lento como las del TICKER_LENTO
 	if ((millis() - TickerRapido) >= TIEMPO_TICKER_RAPIDO) {
 
-		// De momento nada
+		if (Slewing) {
+
+			MiRespondeComandos("GOTO", String(GetCurrentAzimut()));
+
+		}
+
+		//Actualizar el ticker para contar otro ciclo
+		TickerRapido = millis();
 
 	}
 	
 
 	// Aqui las cosas que tenemos que hacer cada TICKER LENTO
-	if ((millis() - TickerRapido) >= TIEMPO_TICKER_LENTO ) {
+	if ((millis() - TickerLento) >= TIEMPO_TICKER_LENTO ) {
 
 		// Comprobar si estamos conectados a la Wifi y si no reconectar SOLO SI NO NOS ESTAMOS MOVIENDO
 		// Porque esto no estoy seguro si bloquea el programa y si nos estamos moviendo atender al movimiento es lo mas importante
@@ -477,10 +523,9 @@ void BMDomo1::Run() {
 			
 		}
 		
-				
-		//Actualizar los tickers
+		
+		//Actualizar el ticker para contar otro ciclo
 		TickerLento = millis();
-		TickerRapido = millis();
 	}
 
 }
@@ -683,7 +728,7 @@ String ManejadorComandos(String comando, String parametros) {
 		if (comando == "GOTO") {
 
 			// Mover la cupula
-			MiCupula.MOVETO(parametros.toInt());
+			MiCupula.MoveTo(parametros.toInt());
 
 		}
 
@@ -698,7 +743,7 @@ String ManejadorComandos(String comando, String parametros) {
 		else if (comando == "FINDHOME") {
 
 			
-			MiCupula.FINDHOME();
+			MiCupula.FindHome();
 
 
 		}
@@ -707,7 +752,7 @@ String ManejadorComandos(String comando, String parametros) {
 		else if (comando == "INITHW") {
 
 
-			MiCupula.IniciaCupula();
+			MiCupula.IniciaCupula(parametros);
 
 
 		}
@@ -724,9 +769,7 @@ String ManejadorComandos(String comando, String parametros) {
 }
 
 
-
-// Devuelve al topic correspondiente la respuesta a un comando
-// Esta funcion la uso como CALLBACK para el objeto cupula
+// Devuelve al topic correspondiente la respuesta a un comando. Esta funcion la uso como CALLBACK para el objeto cupula
 void MandaRespuesta(String comando, String respuesta) {
 				
 	ClienteMQTT.publish(MiConfigMqtt.statTopic + "/" + comando, respuesta, false, 2);
@@ -1086,12 +1129,14 @@ void setup() {
 #pragma region Configuracion Objeto Stepper
 
 
-	// Instanciar el controlador de Stepper. Se le pasa el pin de pulsos y el de direccion en el constructor y despues el enable si queremos usarlo
+	// Instanciar el controlador de Stepper.
 	ControladorStepper = AccelStepper(AccelStepper::DRIVER, MiConfigStepper.StepperPulse, MiConfigStepper.StepperDir);
-	ControladorStepper.setEnablePin(MiConfigStepper.StepperEnable);
 	ControladorStepper.disableOutputs();
+	ControladorStepper.setCurrentPosition(0);
+	ControladorStepper.setEnablePin(MiConfigStepper.StepperEnable);
 	ControladorStepper.setMaxSpeed(MiConfigStepper.StepperMaxSpeed);
 	ControladorStepper.setAcceleration(MiConfigStepper.StepperAceleration);
+	ControladorStepper.setPinsInverted(MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS);
 	//ControladorStepper.setMinPulseWidth(30); // Ancho minimo de pulso en microsegundos
 
 
