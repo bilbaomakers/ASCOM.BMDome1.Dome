@@ -80,7 +80,7 @@ static const uint8_t MECANICA_SENSOR_HOME = D5;						// Pin para el sensor de HO
 
 // Valores para los Tickers
 unsigned long TIEMPO_TICKER_LENTO = 10000;
-unsigned long TIEMPO_TICKER_RAPIDO = 2000;
+unsigned long TIEMPO_TICKER_RAPIDO = 500;
 
 # pragma endregion
 
@@ -174,7 +174,7 @@ private:
 	// Variables Internas para uso de la clase
 	bool Inicializando;						// Para saber que estamos ejecutando el comando INITHW
 	bool BuscandoCasa;						// Para saber que estamos ejecutando el comando FINDHOME
-	
+	long TargetAzimut;						// Variable interna para el destino del movimiento
 	
 	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
 	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
@@ -187,7 +187,10 @@ private:
 	typedef void(*EnviaTelemetriaCallback)();											// Lo mismo para la funcion de envio de telemetria
 	EnviaTelemetriaCallback MiEnviadorDeTelemetria = nullptr;
 
+	long GradosToPasos(long grados);													// Convierte Grados a Pasos segun la mecanica
+	long PasosToGrados(long pasos);														// Convierte pasos a grados segun la mecanica
 	
+
 public:
 
 	BMDomo1();		// Constructor (es la funcion que devuelve un Objeto de esta clase)
@@ -209,13 +212,13 @@ public:
 
 	String MiEstadoJson();											// Devuelve un JSON con los estados en un array de 100 chars (la libreria MQTT no puede con mas de 100)
 	void MoveTo(int azimut);										// Mover la cupula a un azimut
-	void IniciaCupula(String parametros);											// Inicializar la cupula
+	void IniciaCupula(String parametros);							// Inicializar la cupula
+	void ApagaCupula(String parametros);							// Apagar la cupula normalmente.
 	void FindHome();												// Mueve la cupula a Home
-	int GetCurrentAzimut();											// Devuelve el azimut actual de la cupula
+	long GetCurrentAzimut();									    // Devuelve el azimut actual de la cupula
 	void Run();														// Actualiza las propiedades de estado de este objeto en funcion del estado de motores y sensores
 	void SetRespondeComandoCallback(RespondeComandoCallback ref);	// Definir la funcion para pasarnos la funcion de callback del enviamensajes
 	void SetEnviaTelemetriaCallback(EnviaTelemetriaCallback ref);   // Definir la funcion para pasarnos la funcion de callback del enviaTelemetria
-	
 
 };
 
@@ -240,6 +243,31 @@ BMDomo1::BMDomo1() {
 	
 }
 
+#pragma region Funciones Privadas
+
+// Traduce Grados a Pasos segun la mecanica
+long BMDomo1::GradosToPasos(long grados) {
+
+	long Pulsos = (MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR * grados) / (MECANICA_DIENTES_PINON_ATAQUE * 360);
+	return Pulsos;
+
+}
+
+// Traduce Pasos a Grados segun la mecanica
+long BMDomo1::PasosToGrados(long pasos) {
+
+	long Grados = (pasos * MECANICA_DIENTES_PINON_ATAQUE * 360) / (MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR);
+	return Grados;
+
+}
+
+
+#pragma endregion
+
+
+#pragma region Funciones Publicas
+
+
 // Pasar a esta clase la funcion callback de fuera. Me la pasan desde el programa con el metodo SetRespondeComandoCallback
 void BMDomo1::SetRespondeComandoCallback(RespondeComandoCallback ref) {
 
@@ -258,7 +286,7 @@ void BMDomo1::SetEnviaTelemetriaCallback(EnviaTelemetriaCallback ref) {
 String BMDomo1::MiEstadoJson() {
 
 	// Esto crea un objeto de tipo JsonObject para el "contenedor de objetos a serializar". De tamaño Objetos + 1
-	const int capacity = JSON_OBJECT_SIZE(6);
+	const int capacity = JSON_OBJECT_SIZE(7);
 	StaticJsonBuffer<capacity> jBuffer;
 
 	//DynamicJsonBuffer jBuffer;
@@ -270,8 +298,9 @@ String BMDomo1::MiEstadoJson() {
 	jObj.set("COMSta", ComOK);								// Info de la conexion WIFI y MQTT
 	jObj.set("DRVSta", DriverOK);							// Info de la comunicacion con el DRIVER ASCOM (o quiza la cambiemos para comunicacion con "cualquier" driver, incluido uno nuestro
 	jObj.set("HWASta", HardwareOK);							// Info del estado de inicializacion de la mecanica
-	jObj.set("Az", GetCurrentAzimut());	// Posicion Actual (de momento en STEPS)
-	
+	jObj.set("Az", GetCurrentAzimut());						// Posicion Actual (de momento en STEPS)
+	jObj.set("Steps", ControladorStepper.currentPosition());  // Posicion en pasos del objeto del Stepper
+
 	// Crear un buffer (aray de 100 char) donde almacenar la cadena de texto del JSON
 	char JSONmessageBuffer[100];
 
@@ -364,17 +393,14 @@ void BMDomo1::FindHome() {
 }
 
 // Funcion que devuelva el azimut actual de la cupula
-int BMDomo1::GetCurrentAzimut() {
+long BMDomo1::GetCurrentAzimut() {
 
-	long t_azimut;
-	t_azimut = (ControladorStepper.currentPosition() * MECANICA_DIENTES_PINON_ATAQUE * 360) / (MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR);
-	return round(t_azimut);
-
+	return PasosToGrados(ControladorStepper.currentPosition());
+	
 }
 
 // Funcion para mover la cupula a una posicion Azimut concreta
 void BMDomo1::MoveTo(int grados) {
-
 
 
 	// Si la cupula no esta inicializada no hacemos nada mas que avisar
@@ -384,23 +410,25 @@ void BMDomo1::MoveTo(int grados) {
 		
 	}
 
+	else if (Slewing) {
+
+		MiRespondeComandos("GOTO", "SLEWING");
+
+	}
+
 	else {
 
 		// Verificar que los grados no estan fuera de rango
 		if (grados >= 0 && grados <= 359) {
+			
+			// Si es aqui el comando es OK, nos movemos.
 
-			// A hacer para mover la cupula a un azimut determinado
 
-		// Primero cambiar el estado Slewing
-		// No lo voy a hacer aqui. Lo hago en el run mirando el objeto stepper mejor, mas eficiente y limpio
-		//Slewing = true;
+			ControladorStepper.moveTo(GradosToPasos(grados));
+			
+			MiRespondeComandos("GOTO", "OK_MOVE_TO " + String(grados));
 
-		// Traducir los grados a pulsos
-			long Pulsos = (MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR * grados) / (MECANICA_DIENTES_PINON_ATAQUE * 360);
 
-			ControladorStepper.moveTo(Pulsos);
-
-			MiRespondeComandos("GOTO", "OK " + String(grados) + " " + String(Pulsos));
 
 		}
 
@@ -409,7 +437,6 @@ void BMDomo1::MoveTo(int grados) {
 			MiRespondeComandos("GOTO", "OUT_OF_RANGE");
 
 		}
-
 		
 
 	}
@@ -470,7 +497,7 @@ void BMDomo1::Run() {
 	// Un supuesto raro, pero eso es que no hemos conseguido detectar el switch home
 	if (!Slewing && BuscandoCasa) {
 
-		MiRespondeComandos("FINDHOME", "Failed");
+		MiRespondeComandos("FINDHOME", "FAILED_HOME_SW_ERROR");
 		BuscandoCasa = false;
 		Inicializando = false;
 				
@@ -480,9 +507,10 @@ void BMDomo1::Run() {
 	// Aqui las cosas que hay que hacer cada TICKER_RAPIDO (ni tan rapido como las de arriba ni tan lento como las del TICKER_LENTO
 	if ((millis() - TickerRapido) >= TIEMPO_TICKER_RAPIDO) {
 
+		// Mientras se mueve tirar a la salida del comando AZIMUTH la posicion actual
 		if (Slewing) {
 
-			MiRespondeComandos("GOTO", String(GetCurrentAzimut()));
+			MiRespondeComandos("AZIMUTH", String(GetCurrentAzimut()));
 
 		}
 
@@ -533,13 +561,15 @@ void BMDomo1::Run() {
 #pragma endregion
 
 
+#pragma endregion
+
+
 // Objeto de la clase BMDomo1. Es necesario definirlo aqui debajo de la definicion de clase. No puedo en la region de arriba donde tengo los demas
 // Eso es porque la clase usa objetos de fuera. Esto es chapuza pero de momento asi no me lio. Despues todo por referencia y la clase esta debajo de los includes o en una libreria a parte. Asi esntonces estaria OK.
 BMDomo1 MiCupula;
 
 
 #pragma endregion
-
 
 
 #pragma region Funciones de la aplicacion
@@ -671,10 +701,16 @@ void ConectarMQTT() {
 		
 		// Publicar un Online en el LWT
 		ClienteMQTT.publish(MiConfigMqtt.teleTopic + "/LWT", "Online", true, 2);
-
+				
 		// Enviar el JSON de info al topic 
 		MandaTelemetria();
 
+		// Enviar a INITHW un STOPPED para informar que estamos SIN inicializar
+		MandaRespuesta("INITHW", "STOPPED");
+
+		// Enviar Azimut actual al resultado del comando AZIMUTH
+		MandaRespuesta("AZIMUTH", String(MiCupula.GetCurrentAzimut()));
+		
 	}
 
 	else {
@@ -952,7 +988,6 @@ void ImprimeInfoRed() {
 
 
 #pragma endregion
-
 
 
 
