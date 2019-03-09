@@ -21,6 +21,7 @@
 /*
 
 		- Implementar uno a varios Led WS2812 para informar del estado de lo importante
+		- Implementar calculo de rotacion basado en mi posicion para "predecir" el movimiento del objeto y poder hacer seguimiento auntonomo / automatico
 				
 */
 
@@ -69,7 +70,7 @@ static const uint8_t MECANICA_STEPPER_DIRPIN = D1;					// Pin de direccion del s
 static const uint8_t MECANICA_STEPPER_ENABLEPING = D0;				// Pin de enable del stepper
 static const boolean MECANICA_STEPPER_INVERTPINS = true;			// Invertir la logica de los pines de control (pulso 1 o pulso 0)
 static const float MECANICA_STEPPER_MAXSPEED = 1000;				// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXACELERAION = 300;			// Aceleracion maxima del stepper
+static const float MECANICA_STEPPER_MAXACELERAION = 200;			// Aceleracion maxima del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;			// Numero de pasos por vuelta del STEPPER
 static const short MECANICA_RATIO_REDUCTORA = 6;					// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 15;				// Numero de dientes del piños de ataque
@@ -174,7 +175,8 @@ private:
 	// Variables Internas para uso de la clase
 	bool Inicializando;						// Para saber que estamos ejecutando el comando INITHW
 	bool BuscandoCasa;						// Para saber que estamos ejecutando el comando FINDHOME
-	long TargetAzimut;						// Variable interna para el destino del movimiento
+	//long TargetAzimut;						// Variable interna para el destino del movimiento
+	long TotalPasos;						// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
 	
 	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
 	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
@@ -240,7 +242,7 @@ BMDomo1::BMDomo1() {
 	AtHome = false;
 	TickerLento = millis();
 	TickerRapido = millis();
-	
+	TotalPasos = round((float)(MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR) / (float)(MECANICA_DIENTES_PINON_ATAQUE));
 }
 
 #pragma region Funciones Privadas
@@ -248,17 +250,15 @@ BMDomo1::BMDomo1() {
 // Traduce Grados a Pasos segun la mecanica
 long BMDomo1::GradosToPasos(long grados) {
 
-	long Pulsos = (MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR * grados) / (MECANICA_DIENTES_PINON_ATAQUE * 360);
-	return Pulsos;
-
+	return round
+	
 }
 
 // Traduce Pasos a Grados segun la mecanica
 long BMDomo1::PasosToGrados(long pasos) {
 
-	long Grados = (pasos * MECANICA_DIENTES_PINON_ATAQUE * 360) / (MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR);
-	return Grados;
-
+	return round((float)(pasos * 360) / (float)TotalPasos);
+		
 }
 
 
@@ -286,7 +286,7 @@ void BMDomo1::SetEnviaTelemetriaCallback(EnviaTelemetriaCallback ref) {
 String BMDomo1::MiEstadoJson() {
 
 	// Esto crea un objeto de tipo JsonObject para el "contenedor de objetos a serializar". De tamaño Objetos + 1
-	const int capacity = JSON_OBJECT_SIZE(7);
+	const int capacity = JSON_OBJECT_SIZE(8);
 	StaticJsonBuffer<capacity> jBuffer;
 
 	//DynamicJsonBuffer jBuffer;
@@ -300,6 +300,7 @@ String BMDomo1::MiEstadoJson() {
 	jObj.set("HWASta", HardwareOK);							// Info del estado de inicializacion de la mecanica
 	jObj.set("Az", GetCurrentAzimut());						// Posicion Actual (de momento en STEPS)
 	jObj.set("Steps", ControladorStepper.currentPosition());  // Posicion en pasos del objeto del Stepper
+	jObj.set("TSteps", TotalPasos);							// Numero total de pasos por giro de la cupula
 
 	// Crear un buffer (aray de 100 char) donde almacenar la cadena de texto del JSON
 	char JSONmessageBuffer[100];
@@ -395,8 +396,22 @@ void BMDomo1::FindHome() {
 // Funcion que devuelva el azimut actual de la cupula
 long BMDomo1::GetCurrentAzimut() {
 
-	return PasosToGrados(ControladorStepper.currentPosition());
+	// Si los pasòs totales del stepper son mas o igual de los maximos (mas de 360º) restamos una vuelta. Luego en el loop cuando estemos parados corregiremos el valor de la libreria stepper
 	
+	long t_pasos = ControladorStepper.currentPosition();
+	if ( t_pasos < TotalPasos) {
+
+		return PasosToGrados(t_pasos);
+
+	}
+
+	else
+	{
+
+		return PasosToGrados(t_pasos - TotalPasos);
+
+	}
+		
 }
 
 // Funcion para mover la cupula a una posicion Azimut concreta
@@ -422,13 +437,14 @@ void BMDomo1::MoveTo(int grados) {
 		if (grados >= 0 && grados <= 359) {
 			
 			// Si es aqui el comando es OK, nos movemos.
-
-
-			ControladorStepper.moveTo(GradosToPasos(grados));
 			
-			MiRespondeComandos("GOTO", "OK_MOVE_TO " + String(grados));
-
-
+			MiRespondeComandos("GOTO", "OK_MOVE_TO " + String(grados) + " " + String(GradosToPasos(grados)));
+			
+			// Aqui el algoritmo para movernos con las opciones que tenemos de la libreria del Stepper (que no esta pensada para un "anillo" como es la cupula)
+			
+			
+			ControladorStepper.move(GradosToPasos(grados));
+			
 
 		}
 
@@ -447,50 +463,62 @@ void BMDomo1::MoveTo(int grados) {
 // Esta funcion se lanza desde el loop. Es la que hace las comprobaciones. No debe atrancarse nunca tampoco (ni esta ni ninguna)
 void BMDomo1::Run() {
 
-
-	// Comprobaciones de iteracion con el Hardware. Como esto es MUY importante se comprueba siempre que es ejecuta el RUN
-
 	// Una importante es actualizar la propiedad Slewing con el estado del motor paso a paso. 
 	Slewing = ControladorStepper.isRunning();
 
-	// Leer el Switch de HOME y hacer cosas en funcion de otras cosas.
-	// Si esta PULSADO (LOW).
-	if (!Debouncer_HomeSwitch.read()) {
+	// Algunas cosas que hacemos en funcion si nos estamos moviendo o no
 
-		// Actualizar la propiedad ATHome
-		AtHome = true;
-		
-		// Pero es que ademas si esta pulsado, nos estamos moviendo y estamos "buscando casa" .....
-		if (BuscandoCasa && Slewing) {
+	if (Slewing) {
 
-			ControladorStepper.stop();					// Parar el motor que hemos llegado a HOME
-			ControladorStepper.setCurrentPosition(0);	// Poner la posicion a cero ("hacer cero")
-			
-			// Aqui como tenemos aceleraciones va a tardar en parar y nos vamos a pasar de home un cacho (afortunadamente un cacho conocido)
-			// Tendremos que volver para atras despacio el cacho que nos hemos pasado del Switch. Hay que hacer el calculo.
+		if (!Debouncer_HomeSwitch.read()) {
 
-			
-			BuscandoCasa = false;							// Cambiar el flag interno para saber que "ya no estamos buscando casa, ya hemos llegado"
-			MiRespondeComandos("FINDHOME", "ATHOME");		// Responder al comando FINDHOME
-				
-			if (Inicializando) {							// Si ademas estabamos haciendo esto desde el comando INITHW ....
+			// Actualizar la propiedad ATHome
+			AtHome = true;
 
-				Inicializando = false;						// Cambiar la variable interna para saber que "ya no estamos inicializando, ya hemos terminado"
-				MiRespondeComandos("INITHW", "READY");	// Responder al comando INITHW
+			// Pero es que ademas si esta pulsado, nos estamos moviendo y estamos "buscando casa" .....
+			if (BuscandoCasa) {
+
+				ControladorStepper.stop();					// Parar el motor que hemos llegado a HOME
+				ControladorStepper.setCurrentPosition(0);	// Poner la posicion a cero ("hacer cero")
+
+				// Aqui como tenemos aceleraciones va a tardar en parar y nos vamos a pasar de home un cacho (afortunadamente un cacho conocido)
+				// Tendremos que volver para atras despacio el cacho que nos hemos pasado del Switch. Hay que hacer el calculo.
+
+
+				BuscandoCasa = false;							// Cambiar el flag interno para saber que "ya no estamos buscando casa, ya hemos llegado"
+				MiRespondeComandos("FINDHOME", "ATHOME");		// Responder al comando FINDHOME
+
+				if (Inicializando) {							// Si ademas estabamos haciendo esto desde el comando INITHW ....
+
+					Inicializando = false;						// Cambiar la variable interna para saber que "ya no estamos inicializando, ya hemos terminado"
+					MiRespondeComandos("INITHW", "READY");	// Responder al comando INITHW
+
+				}
 
 			}
 
 		}
 
-	}
-	
-	// Y si no esta pulsado .....
-	else
-	{
-		// Actualizamos la propiedad AtHome
-		AtHome = false;
+		// Y si no esta pulsado .....
+		else
+		{
+			// Actualizamos la propiedad AtHome
+			AtHome = false;
+
+		}
 
 	}
+
+	else {
+
+		if (ControladorStepper.currentPosition() > TotalPasos) {
+
+			ControladorStepper.setCurrentPosition(ControladorStepper.currentPosition() - TotalPasos);
+
+		}
+
+	}
+
 
 		
 	// Otra cosa a comprobar es si estamos buscando home y el motor se ha parado sin llegar a hacer lo de arriba
@@ -502,6 +530,8 @@ void BMDomo1::Run() {
 		Inicializando = false;
 				
 	}
+
+
 
 	   
 	// Aqui las cosas que hay que hacer cada TICKER_RAPIDO (ni tan rapido como las de arriba ni tan lento como las del TICKER_LENTO
@@ -764,7 +794,8 @@ String ManejadorComandos(String comando, String parametros) {
 		if (comando == "GOTO") {
 
 			// Mover la cupula
-			MiCupula.MoveTo(parametros.toInt());
+			// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round(). Con esto la cupula tendra una precision de 0.5º
+			MiCupula.MoveTo(round(parametros.toFloat()));
 
 		}
 
