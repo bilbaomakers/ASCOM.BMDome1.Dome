@@ -69,8 +69,8 @@ static const uint8_t MECANICA_STEPPER_PULSEPIN = D2;				// Pin de pulsos del ste
 static const uint8_t MECANICA_STEPPER_DIRPIN = D1;					// Pin de direccion del stepper
 static const uint8_t MECANICA_STEPPER_ENABLEPING = D0;				// Pin de enable del stepper
 static const boolean MECANICA_STEPPER_INVERTPINS = true;			// Invertir la logica de los pines de control (pulso 1 o pulso 0)
-static const float MECANICA_STEPPER_MAXSPEED = 1000;				// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXACELERAION = 200;			// Aceleracion maxima del stepper
+static const float MECANICA_STEPPER_MAXSPEED = 10;				// Velocidad maxima del stepper (pasos por segundo)
+static const float MECANICA_STEPPER_MAXACELERAION = 2;			// Aceleracion maxima del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;			// Numero de pasos por vuelta del STEPPER
 static const short MECANICA_RATIO_REDUCTORA = 6;					// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 15;				// Numero de dientes del piños de ataque
@@ -321,6 +321,8 @@ void BMDomo1::IniciaCupula(String parametros) {
 
 		HardwareOK = true;
 		MiRespondeComandos("INITHW", "READY");
+		ControladorStepper.enableOutputs();
+
 	}
 
 	else {
