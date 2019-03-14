@@ -250,7 +250,7 @@ BMDomo1::BMDomo1() {
 // Traduce Grados a Pasos segun la mecanica
 long BMDomo1::GradosToPasos(long grados) {
 
-	return round
+	return round((float)(grados * TotalPasos) / 360);
 	
 }
 
