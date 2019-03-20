@@ -68,13 +68,14 @@
 static const uint8_t MECANICA_STEPPER_PULSEPIN = D2;				// Pin de pulsos del stepper
 static const uint8_t MECANICA_STEPPER_DIRPIN = D1;					// Pin de direccion del stepper
 static const uint8_t MECANICA_STEPPER_ENABLEPING = D0;				// Pin de enable del stepper
-static const boolean MECANICA_STEPPER_INVERTPINS = true;			// Invertir la logica de los pines de control (pulso 1 o pulso 0)
-static const float MECANICA_STEPPER_MAXSPEED = 10;				// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXACELERAION = 2;			// Aceleracion maxima del stepper
+static const float MECANICA_STEPPER_MAXSPEED = 2000;				// Velocidad maxima del stepper (pasos por segundo)
+static const float MECANICA_STEPPER_MAXACELERAION = 200;			// Aceleracion maxima del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;			// Numero de pasos por vuelta del STEPPER
 static const short MECANICA_RATIO_REDUCTORA = 6;					// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 15;				// Numero de dientes del piños de ataque
 static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 880;		// Numero de dientes de la cremallera de la cupula
+static const boolean MECANICA_STEPPER_INVERTPINS = true;			// Invertir la logica de los pines de control (pulso 1 o pulso 0)
+
 
 // Otros sensores
 static const uint8_t MECANICA_SENSOR_HOME = D5;						// Pin para el sensor de HOME
@@ -175,8 +176,7 @@ private:
 	// Variables Internas para uso de la clase
 	bool Inicializando;						// Para saber que estamos ejecutando el comando INITHW
 	bool BuscandoCasa;						// Para saber que estamos ejecutando el comando FINDHOME
-	//long TargetAzimut;						// Variable interna para el destino del movimiento
-	long TotalPasos;						// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
+	float TotalPasos;						// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
 	
 	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
 	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
@@ -211,8 +211,7 @@ public:
 												
 
 	// Funciones Publicas
-
-	String MiEstadoJson();											// Devuelve un JSON con los estados en un array de 100 chars (la libreria MQTT no puede con mas de 100)
+	String MiEstadoJson(int categoria);								// Devuelve un JSON con los estados en un array de 100 chars (la libreria MQTT no puede con mas de 100)
 	void MoveTo(int azimut);										// Mover la cupula a un azimut
 	void IniciaCupula(String parametros);							// Inicializar la cupula
 	void ApagaCupula(String parametros);							// Apagar la cupula normalmente.
@@ -242,7 +241,7 @@ BMDomo1::BMDomo1() {
 	AtHome = false;
 	TickerLento = millis();
 	TickerRapido = millis();
-	TotalPasos = round((float)(MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR) / (float)(MECANICA_DIENTES_PINON_ATAQUE));
+	TotalPasos = (float)(MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR) / (float)(MECANICA_DIENTES_PINON_ATAQUE);
 }
 
 #pragma region Funciones Privadas
@@ -257,8 +256,20 @@ long BMDomo1::GradosToPasos(long grados) {
 // Traduce Pasos a Grados segun la mecanica
 long BMDomo1::PasosToGrados(long pasos) {
 
-	return round((float)(pasos * 360) / (float)TotalPasos);
+	// Con una pequeña correccion porque a veces si se pide la posicion por encima de 359.5 devuelve 360 (por el redondeo) y no vale, tiene que ser 0
+	long t_grados = round((float)(pasos * 360) / (float)TotalPasos);
+	
+	if (t_grados == 360) {
+
+		return 0;
+
+	}
 		
+	else {
+
+		return t_grados;
+
+	}
 }
 
 
@@ -283,24 +294,44 @@ void BMDomo1::SetEnviaTelemetriaCallback(EnviaTelemetriaCallback ref) {
 }
 
 // Metodo que devuelve un JSON con el estado
-String BMDomo1::MiEstadoJson() {
+String BMDomo1::MiEstadoJson(int categoria) {
 
 	// Esto crea un objeto de tipo JsonObject para el "contenedor de objetos a serializar". De tamaño Objetos + 1
-	const int capacity = JSON_OBJECT_SIZE(8);
-	StaticJsonBuffer<capacity> jBuffer;
-
-	//DynamicJsonBuffer jBuffer;
-
+	//const int capacity = JSON_OBJECT_SIZE(8);
+	//StaticJsonBuffer<capacity> jBuffer;
+	DynamicJsonBuffer jBuffer;
 	JsonObject& jObj = jBuffer.createObject();
 
-	// Esto llena de objetos de tipo "pareja propiedad valor"
-	jObj.set("HWAInf", HardwareInfo);						// Info del Hardware
-	jObj.set("COMSta", ComOK);								// Info de la conexion WIFI y MQTT
-	jObj.set("DRVSta", DriverOK);							// Info de la comunicacion con el DRIVER ASCOM (o quiza la cambiemos para comunicacion con "cualquier" driver, incluido uno nuestro
-	jObj.set("HWASta", HardwareOK);							// Info del estado de inicializacion de la mecanica
-	jObj.set("Az", GetCurrentAzimut());						// Posicion Actual (de momento en STEPS)
-	jObj.set("Steps", ControladorStepper.currentPosition());  // Posicion en pasos del objeto del Stepper
-	jObj.set("TSteps", TotalPasos);							// Numero total de pasos por giro de la cupula
+	// Dependiendo del numero de categoria en la llamada devolver unas cosas u otras
+	switch (categoria)
+	{
+
+	case 1:
+
+		// Esto llena de objetos de tipo "pareja propiedad valor"
+		jObj.set("HI", HardwareInfo);						// Info del Hardware
+		jObj.set("CS", ComOK);								// Info de la conexion WIFI y MQTT
+		jObj.set("DS", DriverOK);							// Info de la comunicacion con el DRIVER ASCOM (o quiza la cambiemos para comunicacion con "cualquier" driver, incluido uno nuestro
+		jObj.set("HS", HardwareOK);							// Info del estado de inicializacion de la mecanica
+		jObj.set("AZ", GetCurrentAzimut());						// Posicion Actual (de momento en STEPS)
+		jObj.set("CT", ControladorStepper.currentPosition());  // Posicion en pasos del objeto del Stepper
+		jObj.set("TT", TotalPasos);							// Numero total de pasos por giro de la cupula
+
+		break;
+
+	case 2:
+
+		jObj.set("INFO2", "INFO2");							
+		
+		break;
+
+	default:
+
+		jObj.set("NOINFO", "NOINFO");						// MAL LLAMADO
+
+		break;
+	}
+
 
 	// Crear un buffer (aray de 100 char) donde almacenar la cadena de texto del JSON
 	char JSONmessageBuffer[100];
@@ -401,16 +432,22 @@ long BMDomo1::GetCurrentAzimut() {
 	// Si los pasòs totales del stepper son mas o igual de los maximos (mas de 360º) restamos una vuelta. Luego en el loop cuando estemos parados corregiremos el valor de la libreria stepper
 	
 	long t_pasos = ControladorStepper.currentPosition();
-	if ( t_pasos < TotalPasos) {
+	if ( t_pasos < TotalPasos && t_pasos >= 0 ) {
 
 		return PasosToGrados(t_pasos);
 
 	}
 
-	else
-	{
+	else if (t_pasos >= TotalPasos && t_pasos >= 0) {
 
 		return PasosToGrados(t_pasos - TotalPasos);
+
+	}
+
+	else if (t_pasos <= 0)
+	{
+
+		return PasosToGrados(TotalPasos + t_pasos);
 
 	}
 		
@@ -439,14 +476,39 @@ void BMDomo1::MoveTo(int grados) {
 		if (grados >= 0 && grados <= 359) {
 			
 			// Si es aqui el comando es OK, nos movemos.
+
+			// movimiento relativo a realiar
+			int delta = (grados - GetCurrentAzimut());
 			
-			MiRespondeComandos("GOTO", "OK_MOVE_TO " + String(grados) + " " + String(GradosToPasos(grados)));
 			
 			// Aqui el algoritmo para movernos con las opciones que tenemos de la libreria del Stepper (que no esta pensada para un "anillo" como es la cupula)
 			
+			int amover = 0;
 			
-			ControladorStepper.move(GradosToPasos(grados));
+
+			if (delta >= -180 && delta <= 180) {
+
+				amover = delta;
 			
+			}
+
+			else if (delta > 180) {
+
+				amover = delta - 360;
+
+			}
+			
+			else if (delta < 180) {
+
+				amover = delta + 360;
+				
+			}
+			
+			MiRespondeComandos("GOTO", "OK_MOVE_TO: " + String(grados) + " REAL: " + String(amover));
+			
+			ControladorStepper.move(GradosToPasos(amover));
+				
+
 
 		}
 
@@ -513,9 +575,10 @@ void BMDomo1::Run() {
 
 	else {
 
-		if (ControladorStepper.currentPosition() > TotalPasos) {
+		// Si la posicion del stepper en el objeto de su libreria esta fuera de rangos y estoy parado corregir
+		if (ControladorStepper.currentPosition() > TotalPasos || ControladorStepper.currentPosition() < 0) {
 
-			ControladorStepper.setCurrentPosition(ControladorStepper.currentPosition() - TotalPasos);
+			ControladorStepper.setCurrentPosition(GradosToPasos(GetCurrentAzimut()));
 
 		}
 
@@ -533,8 +596,7 @@ void BMDomo1::Run() {
 				
 	}
 
-
-
+	
 	   
 	// Aqui las cosas que hay que hacer cada TICKER_RAPIDO (ni tan rapido como las de arriba ni tan lento como las del TICKER_LENTO
 	if ((millis() - TickerRapido) >= TIEMPO_TICKER_RAPIDO) {
@@ -849,7 +911,8 @@ void MandaRespuesta(String comando, String respuesta) {
 // envia al topic tele la telemetria en Json
 void MandaTelemetria() {
 	
-	ClienteMQTT.publish(MiConfigMqtt.teleTopic + "/INFO", MiCupula.MiEstadoJson(), false, 2);
+	ClienteMQTT.publish(MiConfigMqtt.teleTopic + "/INFO1", MiCupula.MiEstadoJson(1), false, 2);
+	ClienteMQTT.publish(MiConfigMqtt.teleTopic + "/INFO2", MiCupula.MiEstadoJson(2), false, 2);
 
 }
 
@@ -1058,8 +1121,7 @@ void setup() {
 	pinMode(MECANICA_SENSOR_HOME, INPUT_PULLUP);
 	Debouncer_HomeSwitch.attach(MECANICA_SENSOR_HOME);
 	Debouncer_HomeSwitch.interval(5);
-		
-
+	
 
 	// Leer la configuracion que hay en el archivo de configuracion config.json
 	Serial.println("Leyendo fichero de configuracion");
@@ -1115,8 +1177,8 @@ void setup() {
 	
 	// Timeout para que si no configuramos el portal AP se cierre
 	wifiManager.setTimeout(300);
-
 	
+
 	// Gestion de la conexion a la Wifi, Si NO estamos conectados por puerto serie lanza el portatl del WifiManager
 	Serial.println("Intentando Conectar a la Wifi .....");
 
