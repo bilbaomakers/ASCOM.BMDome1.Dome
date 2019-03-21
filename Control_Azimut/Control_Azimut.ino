@@ -69,12 +69,13 @@ static const uint8_t MECANICA_STEPPER_PULSEPIN = D2;				// Pin de pulsos del ste
 static const uint8_t MECANICA_STEPPER_DIRPIN = D1;					// Pin de direccion del stepper
 static const uint8_t MECANICA_STEPPER_ENABLEPING = D0;				// Pin de enable del stepper
 static const float MECANICA_STEPPER_MAXSPEED = 2000;				// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXACELERAION = 200;			// Aceleracion maxima del stepper
+static const float MECANICA_STEPPER_MAXACELERAION = 500;			// Aceleracion maxima del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;			// Numero de pasos por vuelta del STEPPER
 static const short MECANICA_RATIO_REDUCTORA = 6;					// Ratio de reduccion de la reductora
-static const short MECANICA_DIENTES_PINON_ATAQUE = 15;				// Numero de dientes del piños de ataque
-static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 880;		// Numero de dientes de la cremallera de la cupula
+static const short MECANICA_DIENTES_PINON_ATAQUE = 16;				// Numero de dientes del piños de ataque
+static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 981;		// Numero de dientes de la cremallera de la cupula
 static const boolean MECANICA_STEPPER_INVERTPINS = true;			// Invertir la logica de los pines de control (pulso 1 o pulso 0)
+static const int MECANICA_STEPPER_ANCHO_PULSO = 100;					// Ancho de los pulsos
 
 
 // Otros sensores
@@ -1267,14 +1268,14 @@ void setup() {
 	ControladorStepper.setMaxSpeed(MiConfigStepper.StepperMaxSpeed);
 	ControladorStepper.setAcceleration(MiConfigStepper.StepperAceleration);
 	ControladorStepper.setPinsInverted(MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS);
-	//ControladorStepper.setMinPulseWidth(30); // Ancho minimo de pulso en microsegundos
+	ControladorStepper.setMinPulseWidth(MECANICA_STEPPER_ANCHO_PULSO); // Ancho minimo de pulso en microsegundos
 
 
 #pragma endregion
 
 	
 	// Habilitar WatchDog
-	wdt_enable(WDTO_500MS);
+	//wdt_enable(WDTO_500MS);
 	
 
 }
@@ -1283,29 +1284,34 @@ void setup() {
 // Funcion LOOP de Arduino
 void loop() {
 
+	if (!ControladorStepper.isRunning()) {
 
-	// Loop de los debouncers
-	Debouncer_HomeSwitch.update();
-	
-
-	// Loop del objeto Cupula
-	MiCupula.Run();
 		
+		// Loop del objeto Cupula
+		MiCupula.Run();
+		
+
+		// Loop del cliente MQTT
+		ClienteMQTT.loop();
+
+
+		// Loop de los debouncers
+		Debouncer_HomeSwitch.update();
+
+
+		// Loop de leer comandos por el puerto serie
+		serial_commands_.ReadSerial();
+
+	}
 	
-	// Loop del cliente MQTT
-	ClienteMQTT.loop();
-	   
 
 	// Loop del Controlador del Stepper
 	ControladorStepper.run(); // Esto hay que llamar para que "run ...."
-
-
-	// Loop de leer comandos por el puerto serie
-	serial_commands_.ReadSerial();
+	
 
 		
 	// Resetear contador de WatchDog
-	wdt_reset();
+	//wdt_reset();
 
 }
 
