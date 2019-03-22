@@ -41,18 +41,20 @@
 
 #pragma region Includes de librerias usadas por el proyecto
 
+// Librerias comantadas en proceso de sustitucion por la WiFiMQTTManager
 
 #include <SerialCommands.h>				// Libreria para la gestion de comandos por el puerto serie https://github.com/ppedro74/Arduino-SerialCommands
-#include <MQTTClient.h>					// Libreria MQTT: https://github.com/256dpi/arduino-mqtt
+//#include <MQTTClient.h>					// Libreria MQTT: https://github.com/256dpi/arduino-mqtt
 #include <AccelStepper.h>				// Para controlar el stepper como se merece: https://www.airspayce.com/mikem/arduino/AccelStepper/classAccelStepper.html
 #include <FS.h>							// Libreria Sistema de Ficheros
-#include <ESP8266WiFi.h>			    // Para las comunicaciones WIFI
-#include <DNSServer.h>					// La necesita WifiManager para el portal captivo
-#include <ESP8266WebServer.h>			// La necesita WifiManager para el formulario de configuracion
-#include <WiFiManager.h>				// Para la gestion avanzada de la wifi
+//#include <WiFi.h>						// Para las comunicaciones WIFI del ESP32
+//#include <DNSServer.h>				// La necesita WifiManager para el portal captivo
+//include <WebServer.h>					// La necesita WifiManager para el formulario de configuracion (ESP32)
+#include <WiFiMQTTManager.h>			// Para Wifi y MQTT: https://platformio.org/lib/show/5954/WiFiMQTTManager%20Library
 #include <ArduinoJson.h>				// OJO: Tener instalada una version NO BETA (a dia de hoy la estable es la 5.13.4). Alguna pata han metido en la 6
 #include <string>						// Para el manejo de cadenas
 #include <Bounce2.h>					// Libreria para filtrar rebotes de los Switches: https://github.com/thomasfredericks/Bounce2
+
 
 #pragma endregion
 
@@ -65,9 +67,9 @@
 //#define ESTADO_CONTROLADOR_READY 2
 
 // Para la configuracion de conjunto Mecanico de arrastre
-static const uint8_t MECANICA_STEPPER_PULSEPIN = D2;				// Pin de pulsos del stepper
-static const uint8_t MECANICA_STEPPER_DIRPIN = D1;					// Pin de direccion del stepper
-static const uint8_t MECANICA_STEPPER_ENABLEPING = D0;				// Pin de enable del stepper
+static const uint8_t MECANICA_STEPPER_PULSEPIN = 32;				// Pin de pulsos del stepper
+static const uint8_t MECANICA_STEPPER_DIRPIN = 33;					// Pin de direccion del stepper
+static const uint8_t MECANICA_STEPPER_ENABLEPING = 25;				// Pin de enable del stepper
 static const float MECANICA_STEPPER_MAXSPEED = 2000;				// Velocidad maxima del stepper (pasos por segundo)
 static const float MECANICA_STEPPER_MAXACELERAION = 500;			// Aceleracion maxima del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;			// Numero de pasos por vuelta del STEPPER
@@ -79,7 +81,7 @@ static const int MECANICA_STEPPER_ANCHO_PULSO = 100;					// Ancho de los pulsos
 
 
 // Otros sensores
-static const uint8_t MECANICA_SENSOR_HOME = D5;						// Pin para el sensor de HOME
+static const uint8_t MECANICA_SENSOR_HOME = 26;						// Pin para el sensor de HOME
 
 // Valores para los Tickers
 unsigned long TIEMPO_TICKER_LENTO = 10000;
@@ -89,21 +91,6 @@ unsigned long TIEMPO_TICKER_RAPIDO = 500;
 
 
 #pragma region Variables y estructuras
-
-
-// Estructura para la configuracion del Stepper de Azimut
-struct MECANICACFG
-{
-
-	// Variables para el Stepper
-	uint8_t StepperPulse = MECANICA_STEPPER_PULSEPIN;
-	uint8_t StepperDir = MECANICA_STEPPER_DIRPIN;
-	uint8_t StepperEnable = MECANICA_STEPPER_ENABLEPING;
-	float StepperMaxSpeed = MECANICA_STEPPER_MAXSPEED;
-	float StepperAceleration = MECANICA_STEPPER_MAXACELERAION;
-
-
-} MiConfigStepper;
 
 
 // Estructura para las configuraciones MQTT
@@ -141,11 +128,11 @@ bool shouldSaveConfig = false;
 
 
 // Wifimanager (aqui para que se vea tambien en el Loop)
-WiFiManager wifiManager;
+WiFiMQTTManager wifiManager;
 
 // Para la conexion MQTT
-WiFiClient Clientered;
-MQTTClient ClienteMQTT;
+//WiFiClient Clientered;
+//MQTTClient ClienteMQTT;
 
 long lastMsg = 0;
 char msg[50];
@@ -298,9 +285,9 @@ void BMDomo1::SetEnviaTelemetriaCallback(EnviaTelemetriaCallback ref) {
 String BMDomo1::MiEstadoJson(int categoria) {
 
 	// Esto crea un objeto de tipo JsonObject para el "contenedor de objetos a serializar". De tamaño Objetos + 1
-	//const int capacity = JSON_OBJECT_SIZE(8);
-	//StaticJsonBuffer<capacity> jBuffer;
-	DynamicJsonBuffer jBuffer;
+	const int capacity = JSON_OBJECT_SIZE(8);
+	StaticJsonBuffer<capacity> jBuffer;
+	//DynamicJsonBuffer jBuffer;
 	JsonObject& jObj = jBuffer.createObject();
 
 	// Dependiendo del numero de categoria en la llamada devolver unas cosas u otras
