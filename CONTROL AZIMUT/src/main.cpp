@@ -33,13 +33,13 @@ Cosas de configuracion a pasar desde el Driver
 //#include <MQTTClient.h>					// Libreria MQTT: https://github.com/256dpi/arduino-mqtt
 #include <AsyncMqttClient.h>			// Vamos a probar esta que es Asincrona: https://github.com/marvinroger/async-mqtt-client
 #include <AccelStepper.h>				// Para controlar el stepper como se merece: https://www.airspayce.com/mikem/arduino/AccelStepper/classAccelStepper.html
-#include <FS.h>							// Libreria Sistema de Ficheros
-#include <WiFi.h>						// Para las comunicaciones WIFI del ESP32
+#include <FS.h>									// Libreria Sistema de Ficheros
+#include <WiFi.h>								// Para las comunicaciones WIFI del ESP32
 #include <DNSServer.h>					// La necesita WifiManager para el portal captivo
 #include <WebServer.h>					// La necesita WifiManager para el formulario de configuracion (ESP32)
 #include <WiFiManager.h>				// Para la gestion avanzada de la wifi
 #include <ArduinoJson.h>				// OJO: Tener instalada una version NO BETA (a dia de hoy la estable es la 5.13.4). Alguna pata han metido en la 6
-#include <string>						// Para el manejo de cadenas
+#include <string>								// Para el manejo de cadenas
 #include <Bounce2.h>					// Libreria para filtrar rebotes de los Switches: https://github.com/thomasfredericks/Bounce2
 #include <SPIFFS.h>						// Libreria para sistema de ficheros SPIFFS
 
@@ -70,8 +70,6 @@ static const uint8_t MECANICA_SENSOR_HOME = 35;						// Pin para el sensor de HO
 // Para el ticker del BMDomo1
 unsigned long TIEMPO_TICKER_RAPIDO = 500;
 
-// Para el ticker del Loop
-unsigned long TIEMPO_TICKER_LOOP = 10000;
 
 #pragma endregion
 
@@ -129,7 +127,7 @@ AccelStepper ControladorStepper;
 Bounce Debouncer_HomeSwitch = Bounce();
 
 // Los manejadores para las tareas
-TaskHandle_t THandleTaskAtenderMecanica,THandleTaskMQTTRun,THandleTaskComandosSerieRun,THandleTaskCupulaRun,THandleTaskMandaTelemetria,THandleTaskReconectaRED;	
+TaskHandle_t THandleTaskAtenderMecanica,THandleTaskMQTTRun,THandleTaskComandosSerieRun,THandleTaskCupulaRun,THandleTaskMandaTelemetria,THandleTaskConexionMQTT;	
 	
 
 #pragma endregion
@@ -750,71 +748,86 @@ void APCallback(WiFiManager *wifiManager) {
 
 // Funcion ante un evento de la wifi
 void WiFiEventCallBack(WiFiEvent_t event) {
-    Serial.printf("[WiFi-event] event: %d\n", event);
+    
+		//Serial.printf("[WiFi-event] event: %d\n", event);
     switch(event) {
     case SYSTEM_EVENT_STA_GOT_IP:
-        Serial.println("WiFi connected");
-        Serial.println("IP address: " + WiFi.localIP());
+        Serial.print("Conexion WiFi: Conetado. IP: ");
+        Serial.println(WiFi.localIP());
         //FALTA: Conectar al MQTT pero NO se puede desde aqui (el Task de la Wifi me manda a tomar por culo por meterme en su terreno)
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:
-        Serial.println("WiFi lost connection");
+        Serial.println("Conexion WiFi: Desconetado");
         //xTimerStop(mqttReconnectTimer, 0); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
-		//xTimerStart(wifiReconnectTimer, 0);
+				//xTimerStart(wifiReconnectTimer, 0);
         break;
-    }
-}
 
+		default:
+				break;
+
+    }
+		
+}
 
 #pragma endregion
 
 #pragma region Funciones de gestion de las conexiones MQTT
 
-
+// Manejador del evento de conexion al MQTT
 void onMqttConnect(bool sessionPresent) {
-  
 
 
-	Serial.println("Conectado al MQTT");
+	bool susflag = false;
+	bool lwtflag = false;
 
+
+	Serial.println("Conexion MQTT: Conectado");
 	
 	// Suscribirse al topic de Entrada de Comandos
 	if (ClienteMQTT.subscribe(MiConfigMqtt.cmndTopic.c_str(), 2)) {
 
 		// Si suscrito correctamente
 		Serial.println("Suscrito al topic " + MiConfigMqtt.cmndTopic);
-									
+
+		susflag = true;				
 
 	}
 		
 	else { Serial.println("Error Suscribiendome al topic " + MiConfigMqtt.cmndTopic); }
 
 	
-	// Informar por puerto serie del topic LWT
-	Serial.println("Topic LWT: " + (MiConfigMqtt.teleTopic + "/LWT"));
-		
-	// Si llegamos hasta aqui es estado de las comunicaciones con WIFI y MQTT es OK
-	MiCupula.ComOK = true;
-	Serial.println("Controlador Azimut Iniciado Correctamente");
-		
 	// Publicar un Online en el LWT
-	ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/LWT").c_str(), 2,false,"Online");
-				
-	// Enviar el JSON de info al topic 
-	//MandaTelemetria();
+	if (ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/LWT").c_str(), 2,true,"Online")){
 
-	// Enviar a INITHW un STOPPED para informar que estamos SIN inicializar
-	//MandaRespuesta("INITHW", "STOPPED");
+		// Si llegamos hasta aqui es estado de las comunicaciones con WIFI y MQTT es OK
+		Serial.println("Publicado Online en Topic LWT: " + (MiConfigMqtt.teleTopic + "/LWT"));
+		
+		lwtflag = true;
 
-	// Enviar Azimut actual al resultado del comando AZIMUTH
-	//MandaRespuesta("AZIMUTH", String(MiCupula.GetCurrentAzimut()));
+	}
+
+
+	if (!susflag || !lwtflag){
+
+		// Si falla la suscripcion o el envio del Online malo kaka. Me desconecto para repetir el proceso.
+		ClienteMQTT.disconnect(false);
+
+	}
+
+	else{
+
+		// Si todo ha ido bien, proceso de inicio terminado.
+		MiCupula.ComOK = true;
+		Serial.println("Controlador Azimut Iniciado Correctamente: ComOK");
+
+	}
 
 
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   
-  Serial.println("Disconnected from MQTT.");
+  Serial.println("Conexion MQTT: Desconectado");
 
   if (WiFi.isConnected()) {
     
@@ -825,16 +838,12 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 }
 
 void onMqttSubscribe(uint16_t packetId, uint8_t qos) {
-  Serial.println("Subscribe acknowledged.");
-  Serial.print("  packetId: ");
+  Serial.print("Subscripcion Realizada. PacketID: ");
   Serial.println(packetId);
-  Serial.print("  qos: ");
-  Serial.println(qos);
 }
 
 void onMqttUnsubscribe(uint16_t packetId) {
-  Serial.println("Unsubscribe acknowledged.");
-  Serial.print("  packetId: ");
+  Serial.print("Subscricion Cancelada. PacketID: ");
   Serial.println(packetId);
 }
 
@@ -857,12 +866,10 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 }
 
 void onMqttPublish(uint16_t packetId) {
-  Serial.println("Publish acknowledged.");
-  Serial.print("  packetId: ");
-  Serial.println(packetId);
+  
+	// Al publicar no hacemos nada de momento.
+
 }
-
-
 
 
 // Devuelve al topic correspondiente la respuesta a un comando. Esta funcion la uso como CALLBACK para el objeto cupula
@@ -1031,40 +1038,40 @@ SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_c
 
 #pragma endregion
 
-#pragma region Otras funciones Auxiliares
-
-
-// Funcion que imprime la informacion de la red por el puerto serie
-void ImprimeInfoRed() {
-
-	Serial.println("Configuracion de Red:");
-	Serial.print("IP: ");
-	Serial.println(WiFi.localIP());
-	Serial.print("      ");
-	Serial.println(WiFi.subnetMask());
-	Serial.print("GW: ");
-	Serial.println(WiFi.gatewayIP());
-
-}
-
-
-#pragma endregion	
-
-
-#pragma endregion
-
 #pragma region TASKS
 
-// Tareas Infinitas
-void TaskAtenderMecanica( void * parameter ){
+// Tarea para vigilar la conexion con el MQTT y conectar si no estamos conectados
+void TaskConexionMQTT( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 100;
+	const TickType_t xFrequency = 5000;
 	xLastWakeTime = xTaskGetTickCount ();
 
 	while(true){
 
-		ControladorStepper.run(); // Esto hay que llamar para que "run ...."  
+		if (WiFi.isConnected() && !ClienteMQTT.connected()){
+
+			ClienteMQTT.connect();
+			
+		}
+		
+		vTaskDelayUntil( &xLastWakeTime, xFrequency );
+
+	}
+
+}
+
+
+// Tarea muy importante para atender a la mecanica. Veremos cuan rapido podemos ejecutarla y como va el motor.
+void TaskAtenderMecanica( void * parameter ){
+
+	TickType_t xLastWakeTime;
+	const TickType_t xFrequency = 10;
+	xLastWakeTime = xTaskGetTickCount ();
+
+	while(true){
+
+		ControladorStepper.run();
 		Debouncer_HomeSwitch.update();
 
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
@@ -1073,7 +1080,7 @@ void TaskAtenderMecanica( void * parameter ){
 
 }
 
-
+// Tarea para "atender" a los mensajes MQTT. Hay que ver tambien cuan rapido podemos ejecutarla
 void TaskMQTTRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
@@ -1090,7 +1097,7 @@ void TaskMQTTRun( void * parameter ){
 
 }
 
-
+// Tarea para los comandos que llegan por el puerto serie
 void TaskComandosSerieRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
@@ -1107,7 +1114,7 @@ void TaskComandosSerieRun( void * parameter ){
 	
 }
 
-
+// tarea run del la clase BMDomo1
 void TaskCupulaRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
@@ -1124,7 +1131,7 @@ void TaskCupulaRun( void * parameter ){
 	
 }
 
-
+// tarea para el envio periodico de la telemetria
 void TaskMandaTelemetria( void * parameter ){
 
 	TickType_t xLastWakeTime;
@@ -1143,54 +1150,11 @@ void TaskMandaTelemetria( void * parameter ){
 }
 
 
-void TaskReconectaRED( void * parameter ){
-
-	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 10000;
-	xLastWakeTime = xTaskGetTickCount ();
-
-		
-	while(true){
-
-		if (WiFi.status() != WL_CONNECTED) {
-		
-			Serial.println("Comprobando WIFI: NO CONECTADO");
-			WiFi.begin();
-
-
-		}
-
-		else {
-
-			Serial.println("Comprobando WIFI: OK");
-
-			if (!ClienteMQTT.connected()){
-
-				Serial.println("Comprobando conexion MQTT: NO CONECTADO");
-				ConectarMQTT();
-
-			}
-
-			else {
-
-				Serial.println("Comprobando conexion MQTT: OK");
-
-			}
-			
-
-		}
-
-		vTaskDelayUntil( &xLastWakeTime, xFrequency );
-
-	}
-	
-}
-
-
 #pragma endregion
 
 
-#pragma region Funcion Setup() y Loop() de ARDUINO
+
+#pragma region Funcion Setup() de ARDUINO
 
 // funcion SETUP de Arduino
 void setup() {
@@ -1229,7 +1193,6 @@ void setup() {
 	LeeConfig();
 	   	
 #pragma endregion		   
-
 
 #pragma region Configuracion e inicializacion de la WIFI
 
@@ -1302,20 +1265,24 @@ void setup() {
 	MiConfigMqtt.teleTopic = "tele/" + String(MiConfigMqtt.mqtt_topic);
 	
 	ClienteMQTT.onConnect(onMqttConnect);
-  	ClienteMQTT.onDisconnect(onMqttDisconnect);
-  	ClienteMQTT.onSubscribe(onMqttSubscribe);
-  	ClienteMQTT.onUnsubscribe(onMqttUnsubscribe);
-  	ClienteMQTT.onMessage(onMqttMessage);
-  	ClienteMQTT.onPublish(onMqttPublish);
-  	ClienteMQTT.setServer(MiConfigMqtt.mqtt_server, 1883);
-	ClienteMQTT.setCleanSession(false);
+  ClienteMQTT.onDisconnect(onMqttDisconnect);
+  ClienteMQTT.onSubscribe(onMqttSubscribe);
+  ClienteMQTT.onUnsubscribe(onMqttUnsubscribe);
+  ClienteMQTT.onMessage(onMqttMessage);
+  ClienteMQTT.onPublish(onMqttPublish);
+  ClienteMQTT.setServer(MiConfigMqtt.mqtt_server, 1883);
+	ClienteMQTT.setCleanSession(true);
 	ClienteMQTT.setClientId("ControlAzimut");
 	ClienteMQTT.setCredentials(MiConfigMqtt.mqtt_usuario,MiConfigMqtt.mqtt_password);
-	ClienteMQTT.setKeepAlive(3000);
-	ClienteMQTT.setWill((MiConfigMqtt.teleTopic + "/LWT").c_str(),2,true,"Offline");
+	ClienteMQTT.setKeepAlive(2);
+	//ClienteMQTT.setWill("(MiConfigMqtt.teleTopic + String("/LTW")).c_str()",2,true,"Offline");
+	//ClienteMQTT.setWill(strcat("tele/AZIMUT", "/LTW"),2,true,"Offline");
+	
+	// Parar un par de segundos antes de lanzar las tareas.
+	delay(2000);
+
 
 #pragma endregion
-
 
 #pragma region Configuracion Objeto Stepper
 
@@ -1332,7 +1299,6 @@ void setup() {
 
 
 #pragma endregion
-
 	
 #pragma region TASKS 
 
@@ -1344,13 +1310,14 @@ void setup() {
 	Serial.println("Creando tareas ...");
 	
 	// Tareas CORE0
-	//xTaskCreatePinnedToCore(TaskReconectaRED,"TaskReconectaWifi",1000,NULL,1,&THandleTaskReconectaRED,1);
-	xTaskCreatePinnedToCore(TaskMandaTelemetria,"TaskMandaTelemetria",1000,NULL,1,&THandleTaskMandaTelemetria,0);
-	//xTaskCreatePinnedToCore(TaskMQTTRun,"TaskMQTTRun",1000,NULL,1,&THandleTaskMQTTRun,0);
+	xTaskCreatePinnedToCore(TaskConexionMQTT,"MQTT_Conectar",2000,NULL,1,&THandleTaskConexionMQTT,0);
+	xTaskCreatePinnedToCore(TaskMQTTRun,"MQTTRun",2000,NULL,1,&THandleTaskMQTTRun,0);
+	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
+	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",2000,NULL,1,&THandleTaskComandosSerieRun,0);
 	// Tareas CORE1
-	xTaskCreatePinnedToCore(TaskAtenderMecanica,"TaskAtenderMecanica",1000,NULL,1,&THandleTaskAtenderMecanica,1);
-	xTaskCreatePinnedToCore(TaskCupulaRun,"TaskCupulaRun",1000,NULL,1,&THandleTaskCupulaRun,1);
-	xTaskCreatePinnedToCore(TaskComandosSerieRun,"TaskComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,1);
+	xTaskCreatePinnedToCore(TaskAtenderMecanica,"AtenderMecanica",2000,NULL,1,&THandleTaskAtenderMecanica,1);
+	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,1);
+	
 
 	Serial.println("Sistema Iniciado");
 
@@ -1358,6 +1325,10 @@ void setup() {
 
 }
 
+#pragma endregion
+
+
+#pragma region Funcion Loop() de ARDUINO
 
 // Funcion LOOP de Arduino
 void loop() {
