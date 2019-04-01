@@ -838,6 +838,8 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   
   String s_topic = String(topic);
 
+	// CASCA SI NO VIENE PAYLOAD. MEJORAR
+
 	// Lo que viene en el char* payload viene de un buffer que trae KAKA, hay que limpiarlo (para eso nos pasan len y tal)
 	char c_payload[len+1]; 										// Array para el payload y un hueco mas para el NULL del final
   strlcpy(c_payload, payload, len+1); 			// Copiar del payload el tamaño justo. strcopy pone al final un NULL
