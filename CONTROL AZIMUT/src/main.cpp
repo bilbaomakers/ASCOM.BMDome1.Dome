@@ -48,24 +48,21 @@ Cosas de configuracion a pasar desde el Driver
 
 #pragma region Constantes y configuracion. Modificable aqui por el usuario
 
-
 // Para la configuracion de conjunto Mecanico de arrastre
-static const uint8_t MECANICA_STEPPER_PULSEPIN = 36;				// Pin de pulsos del stepper
-static const uint8_t MECANICA_STEPPER_DIRPIN = 39;					// Pin de direccion del stepper
+static const uint8_t MECANICA_STEPPER_PULSEPIN = 36;					// Pin de pulsos del stepper
+static const uint8_t MECANICA_STEPPER_DIRPIN = 39;						// Pin de direccion del stepper
 static const uint8_t MECANICA_STEPPER_ENABLEPING = 34;				// Pin de enable del stepper
-static const float MECANICA_STEPPER_MAXSPEED = 2000;				// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXACELERAION = 500;			// Aceleracion maxima del stepper
-static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;			// Numero de pasos por vuelta del STEPPER
-static const short MECANICA_RATIO_REDUCTORA = 6;					// Ratio de reduccion de la reductora
+static const float MECANICA_STEPPER_MAXSPEED = 10000;					// Velocidad maxima del stepper (pasos por segundo)
+static const float MECANICA_STEPPER_MAXACELERAION = 3200;			// Aceleracion maxima del stepper
+static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 3200;		// Numero de pasos por vuelta del STEPPER
+static const short MECANICA_RATIO_REDUCTORA = 6;							// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 16;				// Numero de dientes del piños de ataque
-static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 981;		// Numero de dientes de la cremallera de la cupula
+static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 981;	// Numero de dientes de la cremallera de la cupula
 static const boolean MECANICA_STEPPER_INVERTPINS = true;			// Invertir la logica de los pines de control (pulso 1 o pulso 0)
-static const int MECANICA_STEPPER_ANCHO_PULSO = 100;				// Ancho de los pulsos
-
+static const int MECANICA_STEPPER_ANCHO_PULSO = 20;						// Ancho de los pulsos
 
 // Otros sensores
-static const uint8_t MECANICA_SENSOR_HOME = 35;						// Pin para el sensor de HOME
-
+static const uint8_t MECANICA_SENSOR_HOME = 35;								// Pin para el sensor de HOME
 
 // Para el ticker del BMDomo1
 unsigned long TIEMPO_TICKER_RAPIDO = 500;
@@ -148,7 +145,8 @@ private:
 	// Variables Internas para uso de la clase
 	bool Inicializando;						// Para saber que estamos ejecutando el comando INITHW
 	bool BuscandoCasa;						// Para saber que estamos ejecutando el comando FINDHOME
-	float TotalPasos;						// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
+	float TotalPasos;							// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
+	long UltimoAzimutEnviado;			// Para saber cual es el ultimo Azimut enviado por MQTT
 	
 	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
 	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
@@ -175,8 +173,7 @@ public:
 	bool HardwareOK;							// Si nosotros estamos listos para todo (para informar al driver del PC)
 	bool Slewing;								// Si alguna parte del Domo esta moviendose
 	bool AtHome;								// Si esta parada en HOME
-	unsigned long TickerRapido;					// Otro Ticker para cosas mas rapidas
-												
+													
 
 	// Funciones Publicas
 	String MiEstadoJson(int categoria);								// Devuelve un JSON con los estados en un array de 100 chars (la libreria MQTT no puede con mas de 100)
@@ -206,7 +203,7 @@ BMDomo1::BMDomo1() {
 	Slewing = false;			
 	BuscandoCasa = false;
 	AtHome = false;
-	TickerRapido = millis();
+	UltimoAzimutEnviado = 0;
 	TotalPasos = (float)(MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR) / (float)(MECANICA_DIENTES_PINON_ATAQUE);
 }
 
@@ -268,13 +265,13 @@ String BMDomo1::MiEstadoJson(int categoria) {
 	case 1:
 
 		// Esto llena de objetos de tipo "pareja propiedad valor"
-		jObj.set("HI", HardwareInfo);						// Info del Hardware
-		jObj.set("CS", ComOK);								// Info de la conexion WIFI y MQTT
-		jObj.set("DS", DriverOK);							// Info de la comunicacion con el DRIVER ASCOM (o quiza la cambiemos para comunicacion con "cualquier" driver, incluido uno nuestro
-		jObj.set("HS", HardwareOK);							// Info del estado de inicializacion de la mecanica
-		jObj.set("AZ", GetCurrentAzimut());						// Posicion Actual (de momento en STEPS)
-		jObj.set("CT", ControladorStepper.currentPosition());  // Posicion en pasos del objeto del Stepper
-		jObj.set("TT", TotalPasos);							// Numero total de pasos por giro de la cupula
+		jObj.set("HI", HardwareInfo);														// Info del Hardware
+		jObj.set("CS", ComOK);																	// Info de la conexion WIFI y MQTT
+		jObj.set("DS", DriverOK);																// Info de la comunicacion con el DRIVER ASCOM (o quiza la cambiemos para comunicacion con "cualquier" driver, incluido uno nuestro
+		jObj.set("HS", HardwareOK);															// Info del estado de inicializacion de la mecanica
+		jObj.set("AZ", GetCurrentAzimut());											// Posicion Actual (de momento en STEPS)
+		jObj.set("POS", ControladorStepper.currentPosition());  // Posicion en pasos del objeto del Stepper
+		jObj.set("TOT", TotalPasos);														// Numero total de pasos por giro de la cupula
 
 		break;
 
@@ -544,7 +541,6 @@ void BMDomo1::Run() {
 
 	}
 
-
 		
 	// Otra cosa a comprobar es si estamos buscando home y el motor se ha parado sin llegar a hacer lo de arriba
 	// Un supuesto raro, pero eso es que no hemos conseguido detectar el switch home
@@ -556,23 +552,15 @@ void BMDomo1::Run() {
 				
 	}
 
-	
-	   
-	// Aqui las cosas que hay que hacer cada TICKER_RAPIDO (ni tan rapido como las de arriba ni tan lento como las del TICKER_LENTO
-	if ((millis() - TickerRapido) >= TIEMPO_TICKER_RAPIDO) {
+	// Informar a la salida del comando AZIMUT cada cambio del mismo.
+	long t_azimut = GetCurrentAzimut();
 
-		// Mientras se mueve tirar a la salida del comando AZIMUTH la posicion actual
-		if (Slewing) {
+	if (UltimoAzimutEnviado != t_azimut){
 
-			MiRespondeComandos("AZIMUTH", String(GetCurrentAzimut()));
-
-		}
-
-		//Actualizar el ticker para contar otro ciclo
-		TickerRapido = millis();
+		MiRespondeComandos("AZIMUTH", String(t_azimut));
+		UltimoAzimutEnviado = t_azimut;
 
 	}
-	
 
 	
 }
@@ -684,10 +672,8 @@ void ManejadorComandos(String comando, String parametros) {
 
 	if (parametros.indexOf(" ") >> 0) {
 
-		Serial.println("Me ha llegado un comando");
-		Serial.println("Comando: " + comando);
-		Serial.println("Parametro: " + parametros);
-
+		Serial.println("Me ha llegado un comando:" + comando + " Parametro:" + parametros);
+		
 		// COMANDO GOTO
 		if (comando == "GOTO") {
 
@@ -704,6 +690,7 @@ void ManejadorComandos(String comando, String parametros) {
 
 			//MandaTelemetria();
 			//MandaRespuesta("STATUS", "OK");
+
 		}
 
 		// COMANDO STATUS
@@ -891,10 +878,10 @@ void MandaTelemetria() {
 	
 	if (ClienteMQTT.connected()){
 
-		Serial.println("Enviando Telemetria");
+		//Serial.println("Enviando Telemetria");
 
 		ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO1").c_str(),2, false ,(MiCupula.MiEstadoJson(1)).c_str());
-		ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO2").c_str(),2, false, (MiCupula.MiEstadoJson(2)).c_str());
+		//ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO2").c_str(),2, false, (MiCupula.MiEstadoJson(2)).c_str());
 
 	}
 
@@ -1051,7 +1038,7 @@ SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_c
 void TaskConexionMQTT( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 5000;
+	const TickType_t xFrequency = 4000;
 	xLastWakeTime = xTaskGetTickCount ();
 
 	while(true){
@@ -1072,7 +1059,7 @@ void TaskConexionMQTT( void * parameter ){
 void TaskMQTTRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 100;
+	const TickType_t xFrequency = 50;
 	xLastWakeTime = xTaskGetTickCount ();
 
 	while(true){
@@ -1089,7 +1076,7 @@ void TaskMQTTRun( void * parameter ){
 void TaskComandosSerieRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 100;
+	const TickType_t xFrequency = 50;
 	xLastWakeTime = xTaskGetTickCount ();
 
 	while(true){
@@ -1106,7 +1093,7 @@ void TaskComandosSerieRun( void * parameter ){
 void TaskMandaTelemetria( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 10000;
+	const TickType_t xFrequency = 5000;
 	xLastWakeTime = xTaskGetTickCount ();
 
 	while(true){
@@ -1246,7 +1233,7 @@ void setup() {
 	ClienteMQTT.setCleanSession(true);
 	ClienteMQTT.setClientId("ControlAzimut");
 	ClienteMQTT.setCredentials(MiConfigMqtt.mqtt_usuario,MiConfigMqtt.mqtt_password);
-	ClienteMQTT.setKeepAlive(2);
+	ClienteMQTT.setKeepAlive(4);
 	ClienteMQTT.setWill(MiConfigMqtt.lwtTopic.c_str(),2,true,"Offline");
 		
 	// Parar un par de segundos antes de lanzar las tareas.
