@@ -90,9 +90,9 @@ struct MQTTCFG
 	// Variables internas string para los nombres de los topics. Se les da valor luego al final del setup()
 	// El de comandos al que me voy a suscribir para "escuchar".
 	String cmndTopic;
-	// Y estos como son para publicar, defino la raiz de la jerarquia. Luego cuando publique ya añado al topic lo que necesite (por ejemplo tele/AZIMUT/LWT , etc ...)
 	String statTopic;
 	String teleTopic;
+	String lwtTopic;
 
 } MiConfigMqtt;
 
@@ -127,7 +127,7 @@ AccelStepper ControladorStepper;
 Bounce Debouncer_HomeSwitch = Bounce();
 
 // Los manejadores para las tareas
-TaskHandle_t THandleTaskAtenderMecanica,THandleTaskMQTTRun,THandleTaskComandosSerieRun,THandleTaskCupulaRun,THandleTaskMandaTelemetria,THandleTaskConexionMQTT;	
+TaskHandle_t THandleTaskMQTTRun,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskConexionMQTT;	
 	
 
 #pragma endregion
@@ -851,6 +851,13 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   
   String s_topic = String(topic);
 
+	// Lo que viene en el char* payload viene de un buffer que trae KAKA, hay que limpiarlo (para eso nos pasan len y tal)
+	char c_payload[len+1]; 										// Array para el payload y un hueco mas para el NULL del final
+  strlcpy(c_payload, payload, len+1); 			// Copiar del payload el tamaño justo. strcopy pone al final un NULL
+  
+	// Y ahora lo pasamos a String que esta limpito
+	String s_payload = String(c_payload);
+
   // Sacamos el prefijo del topic, o sea lo que hay delante de la primera /
 	int Indice1 = s_topic.indexOf("/");
 	String Prefijo = s_topic.substring(0, Indice1);
@@ -861,7 +868,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 	String Comando = s_topic.substring(Indice2 + 1);
 		
 	// Si el prefijo es cmnd se lo mandamos al manejador de comandos
-	if (Prefijo == "cmnd") { ManejadorComandos(Comando, payload); }
+	if (Prefijo == "cmnd") { ManejadorComandos(Comando, s_payload); }
 
 }
 
@@ -1061,25 +1068,6 @@ void TaskConexionMQTT( void * parameter ){
 
 }
 
-
-// Tarea muy importante para atender a la mecanica. Veremos cuan rapido podemos ejecutarla y como va el motor.
-void TaskAtenderMecanica( void * parameter ){
-
-	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 10;
-	xLastWakeTime = xTaskGetTickCount ();
-
-	while(true){
-
-		ControladorStepper.run();
-		Debouncer_HomeSwitch.update();
-
-		vTaskDelayUntil( &xLastWakeTime, xFrequency );
-
-	}
-
-}
-
 // Tarea para "atender" a los mensajes MQTT. Hay que ver tambien cuan rapido podemos ejecutarla
 void TaskMQTTRun( void * parameter ){
 
@@ -1107,23 +1095,6 @@ void TaskComandosSerieRun( void * parameter ){
 	while(true){
 
 		serial_commands_.ReadSerial();
-
-		vTaskDelayUntil( &xLastWakeTime, xFrequency );
-
-	}
-	
-}
-
-// tarea run del la clase BMDomo1
-void TaskCupulaRun( void * parameter ){
-
-	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 100;
-	xLastWakeTime = xTaskGetTickCount ();
-
-	while(true){
-
-		MiCupula.Run();
 
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
@@ -1263,6 +1234,7 @@ void setup() {
 	MiConfigMqtt.cmndTopic = "cmnd/" + String(MiConfigMqtt.mqtt_topic) + "/#";
 	MiConfigMqtt.statTopic = "stat/" + String(MiConfigMqtt.mqtt_topic);
 	MiConfigMqtt.teleTopic = "tele/" + String(MiConfigMqtt.mqtt_topic);
+	MiConfigMqtt.lwtTopic = MiConfigMqtt.teleTopic + "/LWT";
 	
 	ClienteMQTT.onConnect(onMqttConnect);
   ClienteMQTT.onDisconnect(onMqttDisconnect);
@@ -1275,9 +1247,8 @@ void setup() {
 	ClienteMQTT.setClientId("ControlAzimut");
 	ClienteMQTT.setCredentials(MiConfigMqtt.mqtt_usuario,MiConfigMqtt.mqtt_password);
 	ClienteMQTT.setKeepAlive(2);
-	//ClienteMQTT.setWill("(MiConfigMqtt.teleTopic + String("/LTW")).c_str()",2,true,"Offline");
-	//ClienteMQTT.setWill(strcat("tele/AZIMUT", "/LTW"),2,true,"Offline");
-	
+	ClienteMQTT.setWill(MiConfigMqtt.lwtTopic.c_str(),2,true,"Offline");
+		
 	// Parar un par de segundos antes de lanzar las tareas.
 	delay(2000);
 
@@ -1314,9 +1285,9 @@ void setup() {
 	xTaskCreatePinnedToCore(TaskMQTTRun,"MQTTRun",2000,NULL,1,&THandleTaskMQTTRun,0);
 	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
 	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",2000,NULL,1,&THandleTaskComandosSerieRun,0);
-	// Tareas CORE1
-	xTaskCreatePinnedToCore(TaskAtenderMecanica,"AtenderMecanica",2000,NULL,1,&THandleTaskAtenderMecanica,1);
-	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,1);
+	
+	// Tareas CORE1. No lanzo ninguna lo hago en el loop() que es una tarea unica en el CORE1
+	// Lo hago asi porque necesito muchisima velocidad y FreeRTOS solo puede cambiar entre tareas a 1Khz (no me vale)
 	
 
 	Serial.println("Sistema Iniciado");
@@ -1333,7 +1304,9 @@ void setup() {
 // Funcion LOOP de Arduino
 void loop() {
 
-		// Aqui no hay nada, todo se ejecuta bajo el Scheduler de FreeRTOS
+		ControladorStepper.run();
+		Debouncer_HomeSwitch.update();
+		MiCupula.Run();
 
 }
 
