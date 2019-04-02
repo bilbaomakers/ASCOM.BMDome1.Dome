@@ -738,6 +738,10 @@ void WiFiEventCallBack(WiFiEvent_t event) {
     
 		//Serial.printf("[WiFi-event] event: %d\n", event);
     switch(event) {
+				
+		case SYSTEM_EVENT_STA_START:
+				Serial.print("Conexion WiFi: Iniciando ...");
+				break;
     case SYSTEM_EVENT_STA_GOT_IP:
         Serial.print("Conexion WiFi: Conetado. IP: ");
         Serial.println(WiFi.localIP());
@@ -1187,8 +1191,8 @@ void setup() {
 	wifiManager.addParameter(&custom_mqtt_server);
 	wifiManager.addParameter(&custom_mqtt_port);
 	wifiManager.addParameter(&custom_mqtt_topic);
-	//wifiManager.addParameter(&custom_mqtt_usuario);
-	//wifiManager.addParameter(&custom_mqtt_password);
+	wifiManager.addParameter(&custom_mqtt_usuario);
+	wifiManager.addParameter(&custom_mqtt_password);
 
 	// Definir Calidad de Señal Minima para mantenerse conectado.
 	// Por defecto sin parametros 8%
