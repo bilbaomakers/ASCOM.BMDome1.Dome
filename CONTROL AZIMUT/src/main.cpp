@@ -23,7 +23,7 @@ Cosas de configuracion a pasar desde el Driver
 
 		- El Azimut cuando esta en HOME
 		- El Azimut del PARK
-		
+
 */
 
 #pragma endregion
@@ -32,19 +32,17 @@ Cosas de configuracion a pasar desde el Driver
 // Librerias comantadas en proceso de sustitucion por la WiFiMQTTManager
 
 #include <SerialCommands.h>				// Libreria para la gestion de comandos por el puerto serie https://github.com/ppedro74/Arduino-SerialCommands
-//#include <MQTTClient.h>					// Libreria MQTT: https://github.com/256dpi/arduino-mqtt
 #include <AsyncMqttClient.h>			// Vamos a probar esta que es Asincrona: https://github.com/marvinroger/async-mqtt-client
-#include <AccelStepper.h>				// Para controlar el stepper como se merece: https://www.airspayce.com/mikem/arduino/AccelStepper/classAccelStepper.html
-#include <FS.h>									// Libreria Sistema de Ficheros
-#include <WiFi.h>								// Para las comunicaciones WIFI del ESP32
-#include <DNSServer.h>					// La necesita WifiManager para el portal captivo
-#include <WebServer.h>					// La necesita WifiManager para el formulario de configuracion (ESP32)
-#include <WiFiManager.h>				// Para la gestion avanzada de la wifi
-#include <ArduinoJson.h>				// OJO: Tener instalada una version NO BETA (a dia de hoy la estable es la 5.13.4). Alguna pata han metido en la 6
-#include <string>								// Para el manejo de cadenas
-#include <Bounce2.h>					// Libreria para filtrar rebotes de los Switches: https://github.com/thomasfredericks/Bounce2
-#include <SPIFFS.h>						// Libreria para sistema de ficheros SPIFFS
-
+#include <AccelStepper.h>					// Para controlar el stepper como se merece: https://www.airspayce.com/mikem/arduino/AccelStepper/classAccelStepper.html
+#include <FS.h>										// Libreria Sistema de Ficheros
+#include <WiFi.h>									// Para las comunicaciones WIFI del ESP32
+#include <DNSServer.h>						// La necesita WifiManager para el portal captivo
+#include <WebServer.h>						// La necesita WifiManager para el formulario de configuracion (ESP32)
+#include <WiFiManager.h>					// Para la gestion avanzada de la wifi
+#include <ArduinoJson.h>					// OJO: Tener instalada una version NO BETA (a dia de hoy la estable es la 5.13.4). Alguna pata han metido en la 6
+#include <string>									// Para el manejo de cadenas
+#include <Bounce2.h>							// Libreria para filtrar rebotes de los Switches: https://github.com/thomasfredericks/Bounce2
+#include <SPIFFS.h>								// Libreria para sistema de ficheros SPIFFS
 
 #pragma endregion
 
@@ -1117,7 +1115,6 @@ void TaskMandaTelemetria( void * parameter ){
 
 
 #pragma endregion
-
 
 
 #pragma region Funcion Setup() de ARDUINO
