@@ -2,6 +2,7 @@
 #pragma region COMENTARIOS
 
 /*
+
 Controlador ASCOM para BMDome1
 Description: Driver para controlador de Domo desarrollado por Bilbaomakers
 			 para el proyecto de observatorio astronomico en Marcilla de Campos.
@@ -22,6 +23,7 @@ Cosas de configuracion a pasar desde el Driver
 
 		- El Azimut cuando esta en HOME
 		- El Azimut del PARK
+		
 */
 
 #pragma endregion
