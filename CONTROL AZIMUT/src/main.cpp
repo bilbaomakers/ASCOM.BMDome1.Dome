@@ -124,7 +124,7 @@ AccelStepper ControladorStepper;
 Bounce Debouncer_HomeSwitch = Bounce();
 
 // Los manejadores para las tareas
-TaskHandle_t THandleTaskMQTTRun,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskConexionMQTT;	
+TaskHandle_t THandleTaskCupulaRun,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskConexionMQTT;	
 	
 
 #pragma endregion
@@ -767,6 +767,7 @@ void WiFiEventCallBack(WiFiEvent_t event) {
 // Manejador del evento de conexion al MQTT
 void onMqttConnect(bool sessionPresent) {
 
+	Serial.println("MQTTCOneect Core: " + String(xPortGetCoreID()));
 
 	bool susflag = false;
 	bool lwtflag = false;
@@ -844,6 +845,8 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 
 	// CASCA SI NO VIENE PAYLOAD. MEJORAR
 
+	Serial.println("MQTT RCV:" + String(xPortGetCoreID()));
+
 	// Lo que viene en el char* payload viene de un buffer que trae KAKA, hay que limpiarlo (para eso nos pasan len y tal)
 	char c_payload[len+1]; 										// Array para el payload y un hueco mas para el NULL del final
   strlcpy(c_payload, payload, len+1); 			// Copiar del payload el tamaño justo. strcopy pone al final un NULL
@@ -874,8 +877,10 @@ void onMqttPublish(uint16_t packetId) {
 
 // Devuelve al topic correspondiente la respuesta a un comando. Esta funcion la uso como CALLBACK para el objeto cupula
 void MandaRespuesta(String comando, String respuesta) {
-	
-	ClienteMQTT.publish((MiConfigMqtt.statTopic + "/" + comando).c_str(), 2, false, respuesta.c_str());
+
+		Serial.println("MQTTenviar Core: " + String(xPortGetCoreID()));	
+		ClienteMQTT.publish((MiConfigMqtt.statTopic + "/" + comando).c_str(), 2, false, respuesta.c_str());
+
 }
 
 
@@ -1062,19 +1067,22 @@ void TaskConexionMQTT( void * parameter ){
 }
 
 // Tarea para "atender" a los mensajes MQTT. Hay que ver tambien cuan rapido podemos ejecutarla
-void TaskMQTTRun( void * parameter ){
+void TaskCupulaRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
 	const TickType_t xFrequency = 50;
 	xLastWakeTime = xTaskGetTickCount ();
 
+	
 	while(true){
 
 		//ClienteMQTT.loop();
+		MiCupula.Run();
 
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
 	}
+	
 
 }
 
@@ -1274,7 +1282,7 @@ void setup() {
 	
 	// Tareas CORE0
 	xTaskCreatePinnedToCore(TaskConexionMQTT,"MQTT_Conectar",2000,NULL,1,&THandleTaskConexionMQTT,0);
-	xTaskCreatePinnedToCore(TaskMQTTRun,"MQTTRun",2000,NULL,1,&THandleTaskMQTTRun,0);
+	xTaskCreatePinnedToCore(TaskCupulaRun,"MQTTRun",2000,NULL,1,&THandleTaskCupulaRun,0);
 	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
 	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",2000,NULL,1,&THandleTaskComandosSerieRun,0);
 	
@@ -1298,7 +1306,7 @@ void loop() {
 
 		ControladorStepper.run();
 		Debouncer_HomeSwitch.update();
-		MiCupula.Run();
+		//MiCupula.Run();
 
 }
 
