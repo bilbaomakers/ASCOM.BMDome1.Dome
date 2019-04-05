@@ -105,12 +105,10 @@ bool shouldSaveConfig = false;
 
 #pragma region Objetos
 
-
-// Wifimanager (aqui para que se vea tambien en el Loop)
+// Wifimanager 
 WiFiManager wifiManager;
 
 // Para la conexion MQTT
-WiFiClient Clientered;
 AsyncMqttClient  ClienteMQTT;
 
 long lastMsg = 0;
@@ -124,7 +122,7 @@ AccelStepper ControladorStepper;
 Bounce Debouncer_HomeSwitch = Bounce();
 
 // Los manejadores para las tareas
-TaskHandle_t THandleTaskCupulaRun,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskConexionMQTT;	
+TaskHandle_t THandleTaskCupulaRun,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed;	
 	
 
 #pragma endregion
@@ -1040,7 +1038,7 @@ SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_c
 #pragma region TASKS
 
 // Tarea para vigilar la conexion con el MQTT y conectar si no estamos conectados
-void TaskConexionMQTT( void * parameter ){
+void TaskGestionRed( void * parameter ){
 
 	TickType_t xLastWakeTime;
 	const TickType_t xFrequency = 4000;
@@ -1066,6 +1064,8 @@ void TaskConexionMQTT( void * parameter ){
 	ClienteMQTT.setCredentials(MiConfigMqtt.mqtt_usuario,MiConfigMqtt.mqtt_password);
 	ClienteMQTT.setKeepAlive(4);
 	ClienteMQTT.setWill(MiConfigMqtt.lwtTopic.c_str(),2,true,"Offline");
+
+	WiFi.begin();
 
 	while(true){
 
@@ -1100,7 +1100,6 @@ void TaskCupulaRun( void * parameter ){
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
 	}
-	
 
 }
 
@@ -1140,26 +1139,19 @@ void TaskMandaTelemetria( void * parameter ){
 	TickType_t xLastWakeTime;
 	const TickType_t xFrequency = 5000;
 	xLastWakeTime = xTaskGetTickCount ();
-
 	
 
 	while(true){
 
-
-		//MandaTelemetria();
-		ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO1").c_str(),2, false ,(MiCupula.MiEstadoJson(1)).c_str());
-
-		//Serial.println("TSK TELEM:" + String(xPortGetCoreID()));
-
+		MandaTelemetria();
+		
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
 	}
 	
 }
 
-
 #pragma endregion
-
 
 
 #pragma region Funcion Setup() de ARDUINO
@@ -1167,12 +1159,9 @@ void TaskMandaTelemetria( void * parameter ){
 // funcion SETUP de Arduino
 void setup() {
 
-// Puerto Serie
+	// Puerto Serie
 	Serial.begin(115200);
 	Serial.println();
-	
-
-#pragma region Inicializar cosas varias
 
 	// Inicializacion de las GPIO
 	pinMode(MECANICA_SENSOR_HOME, INPUT_PULLUP);
@@ -1183,18 +1172,12 @@ void setup() {
 	Serial.println("Leyendo fichero de configuracion");
 	LeeConfig();
 	   	
-#pragma endregion		   
-
-#pragma region Configuracion e inicializacion de la WIFI
-
 	// Añadir al wifimanager parametros para el MQTT
 	WiFiManagerParameter custom_mqtt_server("server", "mqtt server", MiConfigMqtt.mqtt_server, 40);
 	WiFiManagerParameter custom_mqtt_port("port", "mqtt port", MiConfigMqtt.mqtt_port, 5);
 	WiFiManagerParameter custom_mqtt_topic("topic", "mqtt topic", MiConfigMqtt.mqtt_topic, 34);
 	WiFiManagerParameter custom_mqtt_usuario("usuario", "mqtt user", MiConfigMqtt.mqtt_usuario, 20);
 	WiFiManagerParameter custom_mqtt_password("password", "mqtt password", MiConfigMqtt.mqtt_password, 20);
-
-	// Configurar el WiFiManager
 
 	// Borrar la configuracion SSID y Password guardadas en EEPROM (Teoricamente esto hay que hacer despues de hace autoconect no se si esta bien aqui esto)
 	//wifiManager.resetSettings();
@@ -1208,13 +1191,7 @@ void setup() {
 
 	WiFi.onEvent(WiFiEventCallBack);
 
-	// Lo hago directamente en el objeto WIFI porque a traves del Wifimanager no puedo darle el DNS para que me resuelva cositas.
-	// WiFi.config(_ip, _gw, _sn, _dns, _dns);
-	// Y asi pilla por DHCP
-	WiFi.begin();
-    
 	// Añadir mis parametros custom
-
 	wifiManager.addParameter(&custom_mqtt_server);
 	wifiManager.addParameter(&custom_mqtt_port);
 	wifiManager.addParameter(&custom_mqtt_topic);
@@ -1234,7 +1211,6 @@ void setup() {
 	// Timeout para que si no configuramos el portal AP se cierre
 	wifiManager.setTimeout(300);
 	
-
 	// Leer los parametros custom que tiene el wifimanager por si los he actualizado yo en modo AP
 	strcpy(MiConfigMqtt.mqtt_server, custom_mqtt_server.getValue());
 	strcpy(MiConfigMqtt.mqtt_port, custom_mqtt_port.getValue());
@@ -1246,17 +1222,6 @@ void setup() {
 		SalvaConfig();
 	}
 
-#pragma endregion
-
-#pragma region Configuracion MQTT
-
-	
-
-#pragma endregion
-
-#pragma region Configuracion Objeto Stepper
-
-
 	// Instanciar el controlador de Stepper.
 	ControladorStepper = AccelStepper(AccelStepper::DRIVER, MECANICA_STEPPER_PULSEPIN , MECANICA_STEPPER_DIRPIN);
 	ControladorStepper.disableOutputs();
@@ -1267,31 +1232,22 @@ void setup() {
 	ControladorStepper.setPinsInverted(MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS);
 	ControladorStepper.setMinPulseWidth(MECANICA_STEPPER_ANCHO_PULSO); // Ancho minimo de pulso en microsegundos
 
-
-#pragma endregion
-	
-#pragma region TASKS 
-
 	// Lanzar las tareas infinitas a los cores a traves de las funciones del FreeRTOS
-	
 	// xTaskCreate(TareaCore0,"CORE0",1000,NULL,1,&HandleTareaCore0)
 	// xTaskCreatePinnedToCore(TareaCore0,"CORE0",1000,NULL,1,&HandleTareaCore0,0)
 
 	Serial.println("Creando tareas ...");
 	
 	// Tareas CORE0
-	xTaskCreatePinnedToCore(TaskConexionMQTT,"MQTT_Conectar",2000,NULL,1,&THandleTaskConexionMQTT,0);
+	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
 	xTaskCreatePinnedToCore(TaskCupulaRun,"MQTTRun",2000,NULL,1,&THandleTaskCupulaRun,0);
 	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
 	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",2000,NULL,1,&THandleTaskComandosSerieRun,0);
 	
 	// Tareas CORE1. No lanzo ninguna lo hago en el loop() que es una tarea unica en el CORE1
-	// Lo hago asi porque necesito muchisima velocidad y FreeRTOS solo puede cambiar entre tareas a 1Khz (no me vale)
+	// Lo hago asi porque necesito muchisima velocidad y FreeRTOS solo puede cambiar entre tareas a 1Khz.
 	
-
 	Serial.println("Sistema Iniciado");
-
-#pragma endregion
 
 }
 
@@ -1302,11 +1258,10 @@ void setup() {
 
 // Funcion LOOP de Arduino
 void loop() {
-
+		
 		ControladorStepper.run();
 		Debouncer_HomeSwitch.update();
-		//MiCupula.Run();
-
+		
 }
 
 #pragma endregion
