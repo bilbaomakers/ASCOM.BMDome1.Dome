@@ -767,13 +767,11 @@ void WiFiEventCallBack(WiFiEvent_t event) {
 // Manejador del evento de conexion al MQTT
 void onMqttConnect(bool sessionPresent) {
 
-	Serial.println("MQTTCOneect Core: " + String(xPortGetCoreID()));
-
+	Serial.println("Conexion MQTT: Conectado. Core:" + String(xPortGetCoreID()));
+	
 	bool susflag = false;
 	bool lwtflag = false;
 
-
-	Serial.println("Conexion MQTT: Conectado");
 	
 	// Suscribirse al topic de Entrada de Comandos
 	if (ClienteMQTT.subscribe(MiConfigMqtt.cmndTopic.c_str(), 2)) {
@@ -810,7 +808,7 @@ void onMqttConnect(bool sessionPresent) {
 
 		// Si todo ha ido bien, proceso de inicio terminado.
 		MiCupula.ComOK = true;
-		Serial.println("Controlador Azimut Iniciado Correctamente: ComOK");
+		Serial.println("Controlador Azimut Iniciado Correctamente: MQTT-OK");
 
 	}
 
@@ -821,22 +819,16 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   
   Serial.println("Conexion MQTT: Desconectado");
 
-  if (WiFi.isConnected()) {
-    
-	  ClienteMQTT.connect();
-	
-  }
-
 }
 
 void onMqttSubscribe(uint16_t packetId, uint8_t qos) {
-  Serial.print("Subscripcion Realizada. PacketID: ");
-  Serial.println(packetId);
+	//Serial.print("Subscripcion Realizada. PacketID: ");
+	//Serial.println(packetId);
 }
 
 void onMqttUnsubscribe(uint16_t packetId) {
-  Serial.print("Subscricion Cancelada. PacketID: ");
-  Serial.println(packetId);
+  //Serial.print("Subscricion Cancelada. PacketID: ");
+  //Serial.println(packetId);
 }
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
@@ -875,6 +867,7 @@ void onMqttPublish(uint16_t packetId) {
 }
 
 
+
 // Devuelve al topic correspondiente la respuesta a un comando. Esta funcion la uso como CALLBACK para el objeto cupula
 void MandaRespuesta(String comando, String respuesta) {
 
@@ -890,6 +883,7 @@ void MandaTelemetria() {
 	if (ClienteMQTT.connected()){
 
 		//Serial.println("Enviando Telemetria");
+		Serial.println("MandaTelemetria Core: " + String(xPortGetCoreID()));
 
 		ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO1").c_str(),2, false ,(MiCupula.MiEstadoJson(1)).c_str());
 		//ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO2").c_str(),2, false, (MiCupula.MiEstadoJson(2)).c_str());
@@ -1052,6 +1046,27 @@ void TaskConexionMQTT( void * parameter ){
 	const TickType_t xFrequency = 4000;
 	xLastWakeTime = xTaskGetTickCount ();
 
+	ClienteMQTT = AsyncMqttClient();
+
+	// Dar valor a las strings con los nombres de la estructura de los topics
+	MiConfigMqtt.cmndTopic = "cmnd/" + String(MiConfigMqtt.mqtt_topic) + "/#";
+	MiConfigMqtt.statTopic = "stat/" + String(MiConfigMqtt.mqtt_topic);
+	MiConfigMqtt.teleTopic = "tele/" + String(MiConfigMqtt.mqtt_topic);
+	MiConfigMqtt.lwtTopic = MiConfigMqtt.teleTopic + "/LWT";
+		
+	ClienteMQTT.onConnect(onMqttConnect);
+  ClienteMQTT.onDisconnect(onMqttDisconnect);
+  ClienteMQTT.onSubscribe(onMqttSubscribe);
+  ClienteMQTT.onUnsubscribe(onMqttUnsubscribe);
+  ClienteMQTT.onMessage(onMqttMessage);
+  ClienteMQTT.onPublish(onMqttPublish);
+  ClienteMQTT.setServer(MiConfigMqtt.mqtt_server, 1883);
+	ClienteMQTT.setCleanSession(true);
+	ClienteMQTT.setClientId("ControlAzimut");
+	ClienteMQTT.setCredentials(MiConfigMqtt.mqtt_usuario,MiConfigMqtt.mqtt_password);
+	ClienteMQTT.setKeepAlive(4);
+	ClienteMQTT.setWill(MiConfigMqtt.lwtTopic.c_str(),2,true,"Offline");
+
 	while(true){
 
 		if (WiFi.isConnected() && !ClienteMQTT.connected()){
@@ -1073,10 +1088,13 @@ void TaskCupulaRun( void * parameter ){
 	const TickType_t xFrequency = 50;
 	xLastWakeTime = xTaskGetTickCount ();
 
+	// Instanciar el objeto MiCupula. Se inicia el solo (o deberia) con las propiedades en estado guay
+	MiCupula = BMDomo1();
+	// Asignar funciones Callback de Micupula
+	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
 	
 	while(true){
 
-		//ClienteMQTT.loop();
 		MiCupula.Run();
 
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
@@ -1092,6 +1110,19 @@ void TaskComandosSerieRun( void * parameter ){
 	TickType_t xLastWakeTime;
 	const TickType_t xFrequency = 50;
 	xLastWakeTime = xTaskGetTickCount ();
+
+	// Añadir los comandos al objeto manejador de comandos serie
+	serial_commands_.AddCommand(&cmd_WIFI);
+	serial_commands_.AddCommand(&cmd_MQTTSrv);
+	serial_commands_.AddCommand(&cmd_MQTTUser);
+	serial_commands_.AddCommand(&cmd_MQTTPassword);
+	serial_commands_.AddCommand(&cmd_MQTTTopic);
+	serial_commands_.AddCommand(&cmd_SaveConfig);
+	serial_commands_.AddCommand(&cmd_Prueba);
+	
+	// Manejador para los comandos Serie no reconocidos.
+	serial_commands_.SetDefaultHandler(&cmd_error);
+
 
 	while(true){
 
@@ -1110,10 +1141,15 @@ void TaskMandaTelemetria( void * parameter ){
 	const TickType_t xFrequency = 5000;
 	xLastWakeTime = xTaskGetTickCount ();
 
+	
+
 	while(true){
 
 
-		MandaTelemetria();
+		//MandaTelemetria();
+		ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO1").c_str(),2, false ,(MiCupula.MiEstadoJson(1)).c_str());
+
+		//Serial.println("TSK TELEM:" + String(xPortGetCoreID()));
 
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
@@ -1125,35 +1161,19 @@ void TaskMandaTelemetria( void * parameter ){
 #pragma endregion
 
 
+
 #pragma region Funcion Setup() de ARDUINO
 
 // funcion SETUP de Arduino
 void setup() {
 
-#pragma region Inicializar cosas varias
-
-	// Instanciar el objeto MiCupula. Se inicia el solo (o deberia) con las propiedades en estado guay
-	MiCupula = BMDomo1();
-	// Asignar funciones Callback de Micupula
-	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
-	
-	// Puerto Serie
+// Puerto Serie
 	Serial.begin(115200);
 	Serial.println();
 	
-	// Añadir los comandos al objeto manejador de comandos serie
-	serial_commands_.AddCommand(&cmd_WIFI);
-	serial_commands_.AddCommand(&cmd_MQTTSrv);
-	serial_commands_.AddCommand(&cmd_MQTTUser);
-	serial_commands_.AddCommand(&cmd_MQTTPassword);
-	serial_commands_.AddCommand(&cmd_MQTTTopic);
-	serial_commands_.AddCommand(&cmd_SaveConfig);
-	serial_commands_.AddCommand(&cmd_Prueba);
-	
-	// Manejador para los comandos Serie no reconocidos.
-	serial_commands_.SetDefaultHandler(&cmd_error);
 
-	
+#pragma region Inicializar cosas varias
+
 	// Inicializacion de las GPIO
 	pinMode(MECANICA_SENSOR_HOME, INPUT_PULLUP);
 	Debouncer_HomeSwitch.attach(MECANICA_SENSOR_HOME);
@@ -1230,28 +1250,7 @@ void setup() {
 
 #pragma region Configuracion MQTT
 
-	// Dar valor a las strings con los nombres de la estructura de los topics
-	MiConfigMqtt.cmndTopic = "cmnd/" + String(MiConfigMqtt.mqtt_topic) + "/#";
-	MiConfigMqtt.statTopic = "stat/" + String(MiConfigMqtt.mqtt_topic);
-	MiConfigMqtt.teleTopic = "tele/" + String(MiConfigMqtt.mqtt_topic);
-	MiConfigMqtt.lwtTopic = MiConfigMqtt.teleTopic + "/LWT";
 	
-	ClienteMQTT.onConnect(onMqttConnect);
-  ClienteMQTT.onDisconnect(onMqttDisconnect);
-  ClienteMQTT.onSubscribe(onMqttSubscribe);
-  ClienteMQTT.onUnsubscribe(onMqttUnsubscribe);
-  ClienteMQTT.onMessage(onMqttMessage);
-  ClienteMQTT.onPublish(onMqttPublish);
-  ClienteMQTT.setServer(MiConfigMqtt.mqtt_server, 1883);
-	ClienteMQTT.setCleanSession(true);
-	ClienteMQTT.setClientId("ControlAzimut");
-	ClienteMQTT.setCredentials(MiConfigMqtt.mqtt_usuario,MiConfigMqtt.mqtt_password);
-	ClienteMQTT.setKeepAlive(4);
-	ClienteMQTT.setWill(MiConfigMqtt.lwtTopic.c_str(),2,true,"Offline");
-		
-	// Parar un par de segundos antes de lanzar las tareas.
-	delay(2000);
-
 
 #pragma endregion
 
