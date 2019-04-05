@@ -93,6 +93,13 @@ struct MQTTCFG
 
 } MiConfigMqtt;
 
+struct MQTTCMD{
+
+	String Comando;
+	String Payload;
+
+};
+
 
 // flag para saber si tenemos que salvar los datos en el fichero de configuracion.
 bool shouldSaveConfig = false;
@@ -123,7 +130,9 @@ Bounce Debouncer_HomeSwitch = Bounce();
 
 // Los manejadores para las tareas
 TaskHandle_t THandleTaskCupulaRun,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed;	
-	
+
+// Manejadores Colas
+QueueHandle_t ColaRecepcionMQTT,ColaEnvioMQTT;
 
 #pragma endregion
 
@@ -771,6 +780,8 @@ void onMqttConnect(bool sessionPresent) {
 	bool susflag = false;
 	bool lwtflag = false;
 
+		// Crear la cola para los comandos MQTT recibidos (para 10)
+	ColaRecepcionMQTT = xQueueCreate( 10, sizeof( struct MQTTCMD ) );
 	
 	// Suscribirse al topic de Entrada de Comandos
 	if (ClienteMQTT.subscribe(MiConfigMqtt.cmndTopic.c_str(), 2)) {
@@ -852,8 +863,20 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 	int Indice2 = s_topic.lastIndexOf("/");
 	String Comando = s_topic.substring(Indice2 + 1);
 		
+	struct MQTTCMD ComandoMQTT;
+
+	ComandoMQTT.Comando = Comando;
+	ComandoMQTT.Payload = s_payload;
+	
 	// Si el prefijo es cmnd se lo mandamos al manejador de comandos
-	if (Prefijo == "cmnd") { ManejadorComandos(Comando, s_payload); }
+	if (Prefijo == "cmnd") { 
+
+		// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
+		xQueueSend(ColaRecepcionMQTT, &ComandoMQTT, 0);	
+		
+		ManejadorComandos(Comando, s_payload); 
+		
+	}
 
 }
 
@@ -1226,6 +1249,13 @@ void setup() {
 	ControladorStepper.setAcceleration(MECANICA_STEPPER_MAXACELERAION);
 	ControladorStepper.setPinsInverted(MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS);
 	ControladorStepper.setMinPulseWidth(MECANICA_STEPPER_ANCHO_PULSO); // Ancho minimo de pulso en microsegundos
+
+
+
+	// Colas
+
+
+
 
 	// Lanzar las tareas infinitas a los cores a traves de las funciones del FreeRTOS
 	// xTaskCreate(TareaCore0,"CORE0",1000,NULL,1,&HandleTareaCore0)
