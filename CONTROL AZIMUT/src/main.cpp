@@ -405,6 +405,11 @@ long BMDomo1::GetCurrentAzimut() {
 
 	}
 		
+	else {
+
+		return 0;
+
+	}
 
 }
 
@@ -576,8 +581,6 @@ BMDomo1 MiCupula;
 
 #pragma endregion
 
-#pragma region FUNCIONES
-
 #pragma region funciones de gestion de la configuracion
 
 // Funcion Callback disparada por el WifiManager para que sepamos que hay que hay una nueva configuracion que salvar (para los custom parameters).
@@ -585,7 +588,6 @@ void saveConfigCallback() {
 	Serial.println("Lanzado SaveConfigCallback");
 	shouldSaveConfig = true;
 }
-
 
 // Funcion para leer la configuracion desde el fichero de configuracion
 void LeeConfig() {
@@ -631,7 +633,6 @@ void LeeConfig() {
 
 
 }
-
 
 // Funcion para Salvar la configuracion en el fichero de configuracion
 void SalvaConfig() {
@@ -835,8 +836,6 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 
 	// CASCA SI NO VIENE PAYLOAD. MEJORAR
 
-	Serial.println("MQTT RCV:" + String(xPortGetCoreID()));
-
 	// Lo que viene en el char* payload viene de un buffer que trae KAKA, hay que limpiarlo (para eso nos pasan len y tal)
 	char c_payload[len+1]; 										// Array para el payload y un hueco mas para el NULL del final
   strlcpy(c_payload, payload, len+1); 			// Copiar del payload el tamaño justo. strcopy pone al final un NULL
@@ -869,7 +868,6 @@ void onMqttPublish(uint16_t packetId) {
 // Devuelve al topic correspondiente la respuesta a un comando. Esta funcion la uso como CALLBACK para el objeto cupula
 void MandaRespuesta(String comando, String respuesta) {
 
-		Serial.println("MQTTenviar Core: " + String(xPortGetCoreID()));	
 		ClienteMQTT.publish((MiConfigMqtt.statTopic + "/" + comando).c_str(), 2, false, respuesta.c_str());
 
 }
@@ -880,14 +878,10 @@ void MandaTelemetria() {
 	
 	if (ClienteMQTT.connected()){
 
-		//Serial.println("Enviando Telemetria");
-		Serial.println("MandaTelemetria Core: " + String(xPortGetCoreID()));
-
 		ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO1").c_str(),2, false ,(MiCupula.MiEstadoJson(1)).c_str());
 		//ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO2").c_str(),2, false, (MiCupula.MiEstadoJson(2)).c_str());
 
 	}
-
 	
 }
 
@@ -1153,7 +1147,6 @@ void TaskMandaTelemetria( void * parameter ){
 
 #pragma endregion
 
-
 #pragma region Funcion Setup() de ARDUINO
 
 // funcion SETUP de Arduino
@@ -1162,6 +1155,8 @@ void setup() {
 	// Puerto Serie
 	Serial.begin(115200);
 	Serial.println();
+
+	Serial.println("-- Iniciando Controlador Azimut --");
 
 	// Inicializacion de las GPIO
 	pinMode(MECANICA_SENSOR_HOME, INPUT_PULLUP);
@@ -1239,7 +1234,7 @@ void setup() {
 	Serial.println("Creando tareas ...");
 	
 	// Tareas CORE0
-	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
+	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",4000,NULL,1,&THandleTaskGestionRed,0);
 	xTaskCreatePinnedToCore(TaskCupulaRun,"MQTTRun",2000,NULL,1,&THandleTaskCupulaRun,0);
 	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
 	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",2000,NULL,1,&THandleTaskComandosSerieRun,0);
@@ -1252,7 +1247,6 @@ void setup() {
 }
 
 #pragma endregion
-
 
 #pragma region Funcion Loop() de ARDUINO
 
