@@ -129,7 +129,7 @@ AccelStepper ControladorStepper;
 Bounce Debouncer_HomeSwitch = Bounce();
 
 // Los manejadores para las tareas
-TaskHandle_t THandleTaskCupulaRun,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed;	
+TaskHandle_t THandleTaskCupulaRun,THandleTaskProcesaComandos,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed;	
 
 // Manejadores Colas
 QueueHandle_t ColaRecepcionMQTT,ColaEnvioMQTT;
@@ -670,68 +670,6 @@ void SalvaConfig() {
 
 #pragma endregion
 
-#pragma region Funciones de implementacion de los comandos disponibles por MQTT
-
-// Maneja un comando con un parametro. De momento salvo necesidad SOLO 1 parametro
-void ManejadorComandos(String comando, String parametros) {
-
-	// Y estas son las 3 variables con las que vamos a trabajar
-
-
-	if (parametros.indexOf(" ") >> 0) {
-
-		Serial.println("Me ha llegado un comando:" + comando + " Parametro:" + parametros);
-		
-		// COMANDO GOTO
-		if (comando == "GOTO") {
-
-			// Mover la cupula
-			// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round(). Con esto la cupula tendra una precision de 0.5º
-			MiCupula.MoveTo(round(parametros.toFloat()));
-
-		}
-
-
-
-		// COMANDO STATUS
-		else if (comando == "STATUS") {
-
-			//MandaTelemetria();
-			//MandaRespuesta("STATUS", "OK");
-
-		}
-
-		// COMANDO STATUS
-		else if (comando == "FINDHOME") {
-
-			
-			MiCupula.FindHome();
-
-
-		}
-
-		// COMANDO STATUS
-		else if (comando == "INITHW") {
-
-
-			MiCupula.IniciaCupula(parametros);
-
-
-		}
-
-		
-	}
-
-	else {
-
-		Serial.println("Me ha llegado un comando con demasiados parametros");
-
-	}
-
-}
-
-#pragma endregion
-
 #pragma region Funciones de gestion de las conexiones Wifi
 
 // Funcion lanzada cuando entra en modo AP
@@ -748,7 +686,7 @@ void WiFiEventCallBack(WiFiEvent_t event) {
     switch(event) {
 				
 		case SYSTEM_EVENT_STA_START:
-				Serial.print("Conexion WiFi: Iniciando ...");
+				Serial.println("Conexion WiFi: Iniciando ...");
 				break;
     case SYSTEM_EVENT_STA_GOT_IP:
         Serial.print("Conexion WiFi: Conetado. IP: ");
@@ -780,8 +718,6 @@ void onMqttConnect(bool sessionPresent) {
 	bool susflag = false;
 	bool lwtflag = false;
 
-		// Crear la cola para los comandos MQTT recibidos (para 10)
-	ColaRecepcionMQTT = xQueueCreate( 10, sizeof( struct MQTTCMD ) );
 	
 	// Suscribirse al topic de Entrada de Comandos
 	if (ClienteMQTT.subscribe(MiConfigMqtt.cmndTopic.c_str(), 2)) {
@@ -847,6 +783,12 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 
 	// CASCA SI NO VIENE PAYLOAD. MEJORAR
 
+	if (payload == NULL){
+
+		Serial.println("Me ha llegado un comando con payload NULL. Topic: " + String(topic));
+
+	}
+
 	// Lo que viene en el char* payload viene de un buffer que trae KAKA, hay que limpiarlo (para eso nos pasan len y tal)
 	char c_payload[len+1]; 										// Array para el payload y un hueco mas para el NULL del final
   strlcpy(c_payload, payload, len+1); 			// Copiar del payload el tamaño justo. strcopy pone al final un NULL
@@ -874,7 +816,6 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 		// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
 		xQueueSend(ColaRecepcionMQTT, &ComandoMQTT, 0);	
 		
-		ManejadorComandos(Comando, s_payload); 
 		
 	}
 
@@ -912,8 +853,6 @@ void MandaTelemetria() {
 #pragma endregion
 
 #pragma region Funciones de implementacion de los comandos disponibles por el puerto serie
-
-
 
 // Manejadores de los comandos. Aqui dentro lo que queramos hacer con cada comando.
 void cmd_WIFI_hl(SerialCommands* sender)
@@ -1021,7 +960,7 @@ void cmd_SaveConfig_hl(SerialCommands* sender)
 void cmd_Prueba_hl(SerialCommands* sender)
 {
 
-	ManejadorComandos("STATUS", "NADA");
+	
 
 }
 
@@ -1055,7 +994,7 @@ SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_c
 #pragma region TASKS
 
 // Tarea para vigilar la conexion con el MQTT y conectar si no estamos conectados
-void TaskGestionRed( void * parameter ){
+void TaskGestionRed ( void * parameter ) {
 
 	TickType_t xLastWakeTime;
 	const TickType_t xFrequency = 4000;
@@ -1098,11 +1037,83 @@ void TaskGestionRed( void * parameter ){
 
 }
 
+//Tarea para procesar la cola de comandos recibidos
+void TaskProcesaComandos ( void * parameter ){
+
+	TickType_t xLastWakeTime;
+	const TickType_t xFrequency = 100;
+	xLastWakeTime = xTaskGetTickCount ();
+
+	MQTTCMD MiComando;
+
+	while (true){
+
+			if (xQueueReceive(ColaRecepcionMQTT,&MiComando,0) == pdTRUE ){
+
+				if (MiComando.Payload.indexOf(" ") >> 0) {
+
+					Serial.println("Procesando comando:" + MiComando.Comando + " Parametro:" + MiComando.Payload);
+				
+					// COMANDO GOTO
+					if (MiComando.Comando == "GOTO") {
+
+						// Mover la cupula
+						// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round(). Con esto la cupula tendra una precision de 0.5º
+						MiCupula.MoveTo(round(MiComando.Payload.toFloat()));
+
+					}
+
+					// COMANDO STATUS
+					else if (MiComando.Comando == "STATUS") {
+
+						//MandaTelemetria();
+						//MandaRespuesta("STATUS", "OK");
+
+					}
+
+					// COMANDO STATUS
+					else if (MiComando.Comando == "FINDHOME") {
+
+						
+						MiCupula.FindHome();
+
+
+					}
+
+					// COMANDO STATUS
+					else if (MiComando.Comando == "INITHW") {
+
+
+						MiCupula.IniciaCupula(MiComando.Payload);
+
+
+					}
+
+				
+				}
+
+				else {
+
+					Serial.println("Me ha llegado un comando con demasiados parametros");
+
+				}
+
+			}
+
+
+		vTaskDelayUntil( &xLastWakeTime, xFrequency );
+
+	}
+
+}
+
+
+
 // Tarea para "atender" a los mensajes MQTT. Hay que ver tambien cuan rapido podemos ejecutarla
 void TaskCupulaRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 50;
+	const TickType_t xFrequency = 100;
 	xLastWakeTime = xTaskGetTickCount ();
 
 	// Instanciar el objeto MiCupula. Se inicia el solo (o deberia) con las propiedades en estado guay
@@ -1124,7 +1135,7 @@ void TaskCupulaRun( void * parameter ){
 void TaskComandosSerieRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 50;
+	const TickType_t xFrequency = 100;
 	xLastWakeTime = xTaskGetTickCount ();
 
 	// Añadir los comandos al objeto manejador de comandos serie
@@ -1251,21 +1262,19 @@ void setup() {
 	ControladorStepper.setMinPulseWidth(MECANICA_STEPPER_ANCHO_PULSO); // Ancho minimo de pulso en microsegundos
 
 
-
-	// Colas
-
-
-
-
 	// Lanzar las tareas infinitas a los cores a traves de las funciones del FreeRTOS
 	// xTaskCreate(TareaCore0,"CORE0",1000,NULL,1,&HandleTareaCore0)
 	// xTaskCreatePinnedToCore(TareaCore0,"CORE0",1000,NULL,1,&HandleTareaCore0,0)
 
 	Serial.println("Creando tareas ...");
 	
+	// Crear la cola para los comandos MQTT recibidos (para 5)
+	ColaRecepcionMQTT = xQueueCreate( 5, sizeof( struct MQTTCMD ) );
+		
 	// Tareas CORE0
 	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",4000,NULL,1,&THandleTaskGestionRed,0);
-	xTaskCreatePinnedToCore(TaskCupulaRun,"MQTTRun",2000,NULL,1,&THandleTaskCupulaRun,0);
+	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",4000,NULL,1,&THandleTaskProcesaComandos,0);
+	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,0);
 	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
 	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",2000,NULL,1,&THandleTaskComandosSerieRun,0);
 	
