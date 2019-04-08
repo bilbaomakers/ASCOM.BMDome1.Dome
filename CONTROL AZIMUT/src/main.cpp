@@ -93,14 +93,6 @@ struct MQTTCFG
 
 } MiConfigMqtt;
 
-struct MQTTCMD{
-
-	String Comando;
-	String Payload;
-
-};
-
-
 // flag para saber si tenemos que salvar los datos en el fichero de configuracion.
 bool shouldSaveConfig = false;
 //bool shouldSaveConfig = true;
@@ -763,7 +755,7 @@ void onMqttConnect(bool sessionPresent) {
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   
-  Serial.println("Conexion MQTT: Desconectado");
+  Serial.println("Conexion MQTT: Desconectado.");
 
 }
 
@@ -779,44 +771,56 @@ void onMqttUnsubscribe(uint16_t packetId) {
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
   
-  String s_topic = String(topic);
+	String s_topic = String(topic);
 
 	// CASCA SI NO VIENE PAYLOAD. MEJORAR
 
-	if (payload == NULL){
+	if (payload != NULL){
 
-		Serial.println("Me ha llegado un comando con payload NULL. Topic: " + String(topic));
+		//Serial.println("Me ha llegado un comando con payload NULL. Topic: " + String(topic));
 
-	}
-
-	// Lo que viene en el char* payload viene de un buffer que trae KAKA, hay que limpiarlo (para eso nos pasan len y tal)
-	char c_payload[len+1]; 										// Array para el payload y un hueco mas para el NULL del final
-  strlcpy(c_payload, payload, len+1); 			// Copiar del payload el tamaño justo. strcopy pone al final un NULL
-  
-	// Y ahora lo pasamos a String que esta limpito
-	String s_payload = String(c_payload);
-
-  // Sacamos el prefijo del topic, o sea lo que hay delante de la primera /
-	int Indice1 = s_topic.indexOf("/");
-	String Prefijo = s_topic.substring(0, Indice1);
-	
-
-	// Sacamos el "COMANDO" del topic, o sea lo que hay detras de la ultima /
-	int Indice2 = s_topic.lastIndexOf("/");
-	String Comando = s_topic.substring(Indice2 + 1);
+		// Lo que viene en el char* payload viene de un buffer que trae KAKA, hay que limpiarlo (para eso nos pasan len y tal)
+		char c_payload[len+1]; 										// Array para el payload y un hueco mas para el NULL del final
+		strlcpy(c_payload, payload, len+1); 			// Copiar del payload el tamaño justo. strcopy pone al final un NULL
 		
-	struct MQTTCMD ComandoMQTT;
+		// Y ahora lo pasamos a String que esta limpito
+		String s_payload = String(c_payload);
 
-	ComandoMQTT.Comando = Comando;
-	ComandoMQTT.Payload = s_payload;
-	
-	// Si el prefijo es cmnd se lo mandamos al manejador de comandos
-	if (Prefijo == "cmnd") { 
+		// Sacamos el prefijo del topic, o sea lo que hay delante de la primera /
+		int Indice1 = s_topic.indexOf("/");
+		String Prefijo = s_topic.substring(0, Indice1);
+		
+		// Si el prefijo es cmnd se lo mandamos al manejador de comandos
+		if (Prefijo == "cmnd") { 
 
-		// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-		xQueueSend(ColaRecepcionMQTT, &ComandoMQTT, 0);	
-		
-		
+			// Sacamos el "COMANDO" del topic, o sea lo que hay detras de la ultima /
+			int Indice2 = s_topic.lastIndexOf("/");
+			String Comando = s_topic.substring(Indice2 + 1);
+
+			DynamicJsonBuffer jsonBuffer;
+			JsonObject& ObjJson = jsonBuffer.createObject();
+			ObjJson.set("COMANDO",Comando);
+			ObjJson.set("PAYLOAD",s_payload);
+
+			char JSONmessageBuffer[100];
+			ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+			//Serial.println(String(ObjJson.measureLength()));
+
+			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
+			if (xQueueSend(ColaRecepcionMQTT, &JSONmessageBuffer, 0) == pdTRUE) {
+
+				Serial.println("Comando enviado a la cola: " + String(JSONmessageBuffer));
+				
+			}
+
+			else {
+
+				Serial.println("Cola de comandos llena");
+
+			}
+			
+		}
+
 	}
 
 }
@@ -997,7 +1001,7 @@ SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_c
 void TaskGestionRed ( void * parameter ) {
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 4000;
+	const TickType_t xFrequency = 2000;
 	xLastWakeTime = xTaskGetTickCount ();
 
 	ClienteMQTT = AsyncMqttClient();
@@ -1041,25 +1045,27 @@ void TaskGestionRed ( void * parameter ) {
 void TaskProcesaComandos ( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 100;
+	const TickType_t xFrequency = 500;
 	xLastWakeTime = xTaskGetTickCount ();
 
-	MQTTCMD MiComando;
-
+	char JSONmessageBuffer[100];
+		
 	while (true){
+			
+			if (xQueueReceive(ColaRecepcionMQTT,&JSONmessageBuffer,0) == pdTRUE ){
 
-			if (xQueueReceive(ColaRecepcionMQTT,&MiComando,0) == pdTRUE ){
+				Serial.println("Procesando comando: " + String(JSONmessageBuffer));
 
+				/*
 				if (MiComando.Payload.indexOf(" ") >> 0) {
-
-					Serial.println("Procesando comando:" + MiComando.Comando + " Parametro:" + MiComando.Payload);
+	
 				
 					// COMANDO GOTO
 					if (MiComando.Comando == "GOTO") {
 
 						// Mover la cupula
 						// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round(). Con esto la cupula tendra una precision de 0.5º
-						MiCupula.MoveTo(round(MiComando.Payload.toFloat()));
+						//MiCupula.MoveTo(round(MiComando.Payload.toFloat()));
 
 					}
 
@@ -1084,7 +1090,7 @@ void TaskProcesaComandos ( void * parameter ){
 					else if (MiComando.Comando == "INITHW") {
 
 
-						MiCupula.IniciaCupula(MiComando.Payload);
+						//MiCupula.IniciaCupula(MiComando.Payload);
 
 
 					}
@@ -1098,9 +1104,9 @@ void TaskProcesaComandos ( void * parameter ){
 
 				}
 
+			*/
 			}
-
-
+		
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
 	}
@@ -1113,7 +1119,7 @@ void TaskProcesaComandos ( void * parameter ){
 void TaskCupulaRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 100;
+	const TickType_t xFrequency = 50;
 	xLastWakeTime = xTaskGetTickCount ();
 
 	// Instanciar el objeto MiCupula. Se inicia el solo (o deberia) con las propiedades en estado guay
@@ -1269,14 +1275,16 @@ void setup() {
 	Serial.println("Creando tareas ...");
 	
 	// Crear la cola para los comandos MQTT recibidos (para 5)
-	ColaRecepcionMQTT = xQueueCreate( 5, sizeof( struct MQTTCMD ) );
-		
+	//ColaRecepcionMQTT = xQueueCreate( 5, sizeof( struct MQTTCMD ) );
+	ColaRecepcionMQTT = xQueueCreate(5,100);
+	
+			
 	// Tareas CORE0
-	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",4000,NULL,1,&THandleTaskGestionRed,0);
-	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",4000,NULL,1,&THandleTaskProcesaComandos,0);
+	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
+	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,0);
 	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,0);
 	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
-	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",2000,NULL,1,&THandleTaskComandosSerieRun,0);
+	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,0);
 	
 	// Tareas CORE1. No lanzo ninguna lo hago en el loop() que es una tarea unica en el CORE1
 	// Lo hago asi porque necesito muchisima velocidad y FreeRTOS solo puede cambiar entre tareas a 1Khz.
