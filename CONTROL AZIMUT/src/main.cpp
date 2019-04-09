@@ -72,7 +72,6 @@ unsigned long TIEMPO_TICKER_RAPIDO = 500;
 
 #pragma region Variables y estructuras
 
-
 // Estructura para las configuraciones MQTT
 struct MQTTCFG
 {
@@ -121,7 +120,7 @@ AccelStepper ControladorStepper;
 Bounce Debouncer_HomeSwitch = Bounce();
 
 // Los manejadores para las tareas
-TaskHandle_t THandleTaskCupulaRun,THandleTaskProcesaComandos,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed;	
+TaskHandle_t THandleTaskCupulaRun,THandleTaskProcesaComandos,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed,THandleTaskEnviaMQTT;	
 
 // Manejadores Colas
 QueueHandle_t ColaRecepcionMQTT,ColaEnvioMQTT;
@@ -807,18 +806,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 			//Serial.println(String(ObjJson.measureLength()));
 
 			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-			if (xQueueSend(ColaRecepcionMQTT, &JSONmessageBufferTX, 0) == pdTRUE) {
-
-				Serial.println("Comando enviado a la cola: " + String(JSONmessageBufferTX));
-				
-			}
-
-			else {
-
-				Serial.println("Cola de comandos llena");
-
-			}
-			
+			xQueueSend(ColaRecepcionMQTT, &JSONmessageBufferTX, 0);
 			
 		}
 
@@ -833,9 +821,20 @@ void onMqttPublish(uint16_t packetId) {
 }
 
 // Devuelve al topic correspondiente la respuesta a un comando. Esta funcion la uso como CALLBACK para el objeto cupula
-void MandaRespuesta(String comando, String respuesta) {
+void MandaRespuesta(String comando, String payload) {
 
-		ClienteMQTT.publish((MiConfigMqtt.statTopic + "/" + comando).c_str(), 2, false, respuesta.c_str());
+			String t_topic = MiConfigMqtt.statTopic + "/" + comando;
+
+			DynamicJsonBuffer jsonBuffer;
+			JsonObject& ObjJson = jsonBuffer.createObject();
+			ObjJson.set("TOPIC",t_topic);
+			ObjJson.set("PAYLOAD",payload);
+
+			char JSONmessageBufferMR[100];
+			ObjJson.printTo(JSONmessageBufferMR, sizeof(JSONmessageBufferMR));
+			
+			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
+			xQueueSend(ColaEnvioMQTT, &JSONmessageBufferMR, 0); 
 
 }
 
@@ -1002,7 +1001,6 @@ void TaskGestionRed ( void * parameter ) {
 	const TickType_t xFrequency = 2000;
 	xLastWakeTime = xTaskGetTickCount ();
 
-	
 
 	while(true){
 
@@ -1022,7 +1020,7 @@ void TaskGestionRed ( void * parameter ) {
 void TaskProcesaComandos ( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 500;
+	const TickType_t xFrequency = 100;
 	xLastWakeTime = xTaskGetTickCount ();
 
 	char JSONmessageBufferRX[100];
@@ -1047,14 +1045,8 @@ void TaskProcesaComandos ( void * parameter ){
 					rx_Comando = ObjJson["COMANDO"].as<String>();
 					rx_Payload = ObjJson["PAYLOAD"].as<String>();
 
-					
-
 					if (rx_Payload.indexOf(" ") >> 0) {
-						
-						Serial.println(rx_Comando);
-						Serial.println(rx_Payload);
-
-						
+					
 						// COMANDO GOTO
 						if (rx_Comando == "GOTO") {
 
@@ -1080,7 +1072,6 @@ void TaskProcesaComandos ( void * parameter ){
 
 						}
 						
-					
 					}
 
 					else {
@@ -1109,7 +1100,41 @@ void TaskProcesaComandos ( void * parameter ){
 
 }
 
+void TaskEnviaMQTT( void * parameter ){
 
+	TickType_t xLastWakeTime;
+	const TickType_t xFrequency = 100;
+	xLastWakeTime = xTaskGetTickCount ();
+	
+	char JSONmessageBufferTE[100];
+	DynamicJsonBuffer jsonBufferTE;
+	
+	String te_Topic;
+	String te_Payload;
+
+	while(true){
+
+		if (xQueueReceive(ColaEnvioMQTT,&JSONmessageBufferTE,0) == pdTRUE ){
+
+				Serial.println("Enviando MQTT: " + String(JSONmessageBufferTE));
+				
+				JsonObject& ObjJson = jsonBufferTE.parseObject(JSONmessageBufferTE);
+
+				if (ObjJson.success()) {
+					
+					te_Topic = ObjJson["TOPIC"].as<String>();
+					te_Payload = ObjJson["PAYLOAD"].as<String>();
+				
+					ClienteMQTT.publish((te_Topic).c_str(), 2, false, te_Payload.c_str());
+
+				}
+		}
+
+		vTaskDelayUntil( &xLastWakeTime, xFrequency );
+
+	}
+
+}
 
 // Tarea para "atender" a los mensajes MQTT. Hay que ver tambien cuan rapido podemos ejecutarla
 void TaskCupulaRun( void * parameter ){
@@ -1295,15 +1320,16 @@ void setup() {
 	
 	// Crear la cola para los comandos MQTT recibidos (para 5)
 	//ColaRecepcionMQTT = xQueueCreate( 5, sizeof( struct MQTTCMD ) );
-	ColaRecepcionMQTT = xQueueCreate(5,100);
-	
+	ColaRecepcionMQTT = xQueueCreate(10,100);
+	ColaEnvioMQTT = xQueueCreate(10,100);
 			
 	// Tareas CORE0
 	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
-	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,1);
-	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,1);
-	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,1);
-	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,1);
+	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,0);
+	xTaskCreatePinnedToCore(TaskEnviaMQTT,"EnviaMQTT",2000,NULL,1,&THandleTaskEnviaMQTT,0);
+	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,0);
+	//xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
+	//xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,0);
 	
 	// Tareas CORE1. No lanzo ninguna lo hago en el loop() que es una tarea unica en el CORE1
 	// Lo hago asi porque necesito muchisima velocidad y FreeRTOS solo puede cambiar entre tareas a 1Khz.
