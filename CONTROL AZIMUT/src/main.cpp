@@ -802,14 +802,14 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 			ObjJson.set("COMANDO",Comando);
 			ObjJson.set("PAYLOAD",s_payload);
 
-			char JSONmessageBuffer[100];
-			ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+			char JSONmessageBufferTX[100];
+			ObjJson.printTo(JSONmessageBufferTX, sizeof(JSONmessageBufferTX));
 			//Serial.println(String(ObjJson.measureLength()));
 
 			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-			if (xQueueSend(ColaRecepcionMQTT, &JSONmessageBuffer, 0) == pdTRUE) {
+			if (xQueueSend(ColaRecepcionMQTT, &JSONmessageBufferTX, 0) == pdTRUE) {
 
-				Serial.println("Comando enviado a la cola: " + String(JSONmessageBuffer));
+				Serial.println("Comando enviado a la cola: " + String(JSONmessageBufferTX));
 				
 			}
 
@@ -818,6 +818,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 				Serial.println("Cola de comandos llena");
 
 			}
+			
 			
 		}
 
@@ -831,15 +832,12 @@ void onMqttPublish(uint16_t packetId) {
 
 }
 
-
-
 // Devuelve al topic correspondiente la respuesta a un comando. Esta funcion la uso como CALLBACK para el objeto cupula
 void MandaRespuesta(String comando, String respuesta) {
 
 		ClienteMQTT.publish((MiConfigMqtt.statTopic + "/" + comando).c_str(), 2, false, respuesta.c_str());
 
 }
-
 
 // envia al topic tele la telemetria en Json
 void MandaTelemetria() {
@@ -1004,28 +1002,7 @@ void TaskGestionRed ( void * parameter ) {
 	const TickType_t xFrequency = 2000;
 	xLastWakeTime = xTaskGetTickCount ();
 
-	ClienteMQTT = AsyncMqttClient();
-
-	// Dar valor a las strings con los nombres de la estructura de los topics
-	MiConfigMqtt.cmndTopic = "cmnd/" + String(MiConfigMqtt.mqtt_topic) + "/#";
-	MiConfigMqtt.statTopic = "stat/" + String(MiConfigMqtt.mqtt_topic);
-	MiConfigMqtt.teleTopic = "tele/" + String(MiConfigMqtt.mqtt_topic);
-	MiConfigMqtt.lwtTopic = MiConfigMqtt.teleTopic + "/LWT";
-		
-	ClienteMQTT.onConnect(onMqttConnect);
-  ClienteMQTT.onDisconnect(onMqttDisconnect);
-  ClienteMQTT.onSubscribe(onMqttSubscribe);
-  ClienteMQTT.onUnsubscribe(onMqttUnsubscribe);
-  ClienteMQTT.onMessage(onMqttMessage);
-  ClienteMQTT.onPublish(onMqttPublish);
-  ClienteMQTT.setServer(MiConfigMqtt.mqtt_server, 1883);
-	ClienteMQTT.setCleanSession(true);
-	ClienteMQTT.setClientId("ControlAzimut");
-	ClienteMQTT.setCredentials(MiConfigMqtt.mqtt_usuario,MiConfigMqtt.mqtt_password);
-	ClienteMQTT.setKeepAlive(4);
-	ClienteMQTT.setWill(MiConfigMqtt.lwtTopic.c_str(),2,true,"Offline");
-
-	WiFi.begin();
+	
 
 	while(true){
 
@@ -1048,63 +1025,82 @@ void TaskProcesaComandos ( void * parameter ){
 	const TickType_t xFrequency = 500;
 	xLastWakeTime = xTaskGetTickCount ();
 
-	char JSONmessageBuffer[100];
-		
+	char JSONmessageBufferRX[100];
+	DynamicJsonBuffer jsonBufferRX;
+	
+	String rx_Comando;
+	String rx_Payload;
+
 	while (true){
 			
-			if (xQueueReceive(ColaRecepcionMQTT,&JSONmessageBuffer,0) == pdTRUE ){
+			if (xQueueReceive(ColaRecepcionMQTT,&JSONmessageBufferRX,0) == pdTRUE ){
 
-				Serial.println("Procesando comando: " + String(JSONmessageBuffer));
+				Serial.println("Procesando comando: " + String(JSONmessageBufferRX));
 
-				/*
-				if (MiComando.Payload.indexOf(" ") >> 0) {
-	
 				
-					// COMANDO GOTO
-					if (MiComando.Comando == "GOTO") {
+				JsonObject& ObjJson = jsonBufferRX.parseObject(JSONmessageBufferRX);
 
-						// Mover la cupula
-						// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round(). Con esto la cupula tendra una precision de 0.5º
-						//MiCupula.MoveTo(round(MiComando.Payload.toFloat()));
+				//json.printTo(Serial);
+				if (ObjJson.success()) {
+					
 
-					}
+					rx_Comando = ObjJson["COMANDO"].as<String>();
+					rx_Payload = ObjJson["PAYLOAD"].as<String>();
 
-					// COMANDO STATUS
-					else if (MiComando.Comando == "STATUS") {
+					
 
-						//MandaTelemetria();
-						//MandaRespuesta("STATUS", "OK");
-
-					}
-
-					// COMANDO STATUS
-					else if (MiComando.Comando == "FINDHOME") {
+					if (rx_Payload.indexOf(" ") >> 0) {
+						
+						Serial.println(rx_Comando);
+						Serial.println(rx_Payload);
 
 						
-						MiCupula.FindHome();
+						// COMANDO GOTO
+						if (rx_Comando == "GOTO") {
+
+							// Mover la cupula
+							// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round(). Con esto la cupula tendra una precision de 0.5º
+							MiCupula.MoveTo(round(rx_Payload.toFloat()));
+
+						}
+
+						// COMANDO STATUS
+						else if (rx_Comando == "FINDHOME") {
+
+							
+							MiCupula.FindHome();
 
 
+						}
+
+						// COMANDO STATUS
+						else if (rx_Comando == "INITHW") {
+
+							MiCupula.IniciaCupula(rx_Payload);
+
+						}
+						
+					
 					}
 
-					// COMANDO STATUS
-					else if (MiComando.Comando == "INITHW") {
+					else {
 
-
-						//MiCupula.IniciaCupula(MiComando.Payload);
-
+						Serial.println("Me ha llegado un comando con demasiados parametros");
 
 					}
 
 				
+
 				}
 
 				else {
 
-					Serial.println("Me ha llegado un comando con demasiados parametros");
+						Serial.println("Me ha llegado un comando que no puedo Deserializar");
 
 				}
 
-			*/
+				
+
 			}
 		
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
@@ -1121,11 +1117,6 @@ void TaskCupulaRun( void * parameter ){
 	TickType_t xLastWakeTime;
 	const TickType_t xFrequency = 50;
 	xLastWakeTime = xTaskGetTickCount ();
-
-	// Instanciar el objeto MiCupula. Se inicia el solo (o deberia) con las propiedades en estado guay
-	MiCupula = BMDomo1();
-	// Asignar funciones Callback de Micupula
-	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
 	
 	while(true){
 
@@ -1198,6 +1189,11 @@ void setup() {
 
 	Serial.println("-- Iniciando Controlador Azimut --");
 
+	// Instanciar el objeto MiCupula. Se inicia el solo (o deberia) con las propiedades en estado guay
+	MiCupula = BMDomo1();
+	// Asignar funciones Callback de Micupula
+	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
+		
 	// Inicializacion de las GPIO
 	pinMode(MECANICA_SENSOR_HOME, INPUT_PULLUP);
 	Debouncer_HomeSwitch.attach(MECANICA_SENSOR_HOME);
@@ -1206,7 +1202,7 @@ void setup() {
 	// Leer la configuracion que hay en el archivo de configuracion config.json
 	Serial.println("Leyendo fichero de configuracion");
 	LeeConfig();
-	   	
+
 	// Añadir al wifimanager parametros para el MQTT
 	WiFiManagerParameter custom_mqtt_server("server", "mqtt server", MiConfigMqtt.mqtt_server, 40);
 	WiFiManagerParameter custom_mqtt_port("port", "mqtt port", MiConfigMqtt.mqtt_port, 5);
@@ -1245,7 +1241,30 @@ void setup() {
 	
 	// Timeout para que si no configuramos el portal AP se cierre
 	wifiManager.setTimeout(300);
-	
+
+	ClienteMQTT = AsyncMqttClient();
+
+	// Dar valor a las strings con los nombres de la estructura de los topics
+	MiConfigMqtt.cmndTopic = "cmnd/" + String(MiConfigMqtt.mqtt_topic) + "/#";
+	MiConfigMqtt.statTopic = "stat/" + String(MiConfigMqtt.mqtt_topic);
+	MiConfigMqtt.teleTopic = "tele/" + String(MiConfigMqtt.mqtt_topic);
+	MiConfigMqtt.lwtTopic = MiConfigMqtt.teleTopic + "/LWT";
+		
+	ClienteMQTT.onConnect(onMqttConnect);
+  ClienteMQTT.onDisconnect(onMqttDisconnect);
+  ClienteMQTT.onSubscribe(onMqttSubscribe);
+  ClienteMQTT.onUnsubscribe(onMqttUnsubscribe);
+  ClienteMQTT.onMessage(onMqttMessage);
+  ClienteMQTT.onPublish(onMqttPublish);
+  ClienteMQTT.setServer(MiConfigMqtt.mqtt_server, 1883);
+	ClienteMQTT.setCleanSession(true);
+	ClienteMQTT.setClientId("ControlAzimut");
+	ClienteMQTT.setCredentials(MiConfigMqtt.mqtt_usuario,MiConfigMqtt.mqtt_password);
+	ClienteMQTT.setKeepAlive(4);
+	ClienteMQTT.setWill(MiConfigMqtt.lwtTopic.c_str(),2,true,"Offline");
+
+	WiFi.begin();
+
 	// Leer los parametros custom que tiene el wifimanager por si los he actualizado yo en modo AP
 	strcpy(MiConfigMqtt.mqtt_server, custom_mqtt_server.getValue());
 	strcpy(MiConfigMqtt.mqtt_port, custom_mqtt_port.getValue());
@@ -1281,10 +1300,10 @@ void setup() {
 			
 	// Tareas CORE0
 	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
-	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,0);
-	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,0);
-	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
-	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,0);
+	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,1);
+	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,1);
+	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,1);
+	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,1);
 	
 	// Tareas CORE1. No lanzo ninguna lo hago en el loop() que es una tarea unica en el CORE1
 	// Lo hago asi porque necesito muchisima velocidad y FreeRTOS solo puede cambiar entre tareas a 1Khz.
