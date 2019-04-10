@@ -38,7 +38,7 @@ Cosas de configuracion a pasar desde el Driver
 #include <WiFi.h>									// Para las comunicaciones WIFI del ESP32
 #include <DNSServer.h>						// La necesita WifiManager para el portal captivo
 #include <WebServer.h>						// La necesita WifiManager para el formulario de configuracion (ESP32)
-#include <WiFiManager.h>					// Para la gestion avanzada de la wifi
+//#include <WiFiManager.h>					// Para la gestion avanzada de la wifi
 #include <ArduinoJson.h>					// OJO: Tener instalada una version NO BETA (a dia de hoy la estable es la 5.13.4). Alguna pata han metido en la 6
 #include <string>									// Para el manejo de cadenas
 #include <Bounce2.h>							// Libreria para filtrar rebotes de los Switches: https://github.com/thomasfredericks/Bounce2
@@ -92,19 +92,10 @@ struct MQTTCFG
 
 } MiConfigMqtt;
 
-// flag para saber si tenemos que salvar los datos en el fichero de configuracion.
-bool shouldSaveConfig = false;
-//bool shouldSaveConfig = true;
-
-// Para los timers
-// unsigned long millis1;
 
 #pragma endregion
 
 #pragma region Objetos
-
-// Wifimanager 
-WiFiManager wifiManager;
 
 // Para la conexion MQTT
 AsyncMqttClient  ClienteMQTT;
@@ -120,10 +111,10 @@ AccelStepper ControladorStepper;
 Bounce Debouncer_HomeSwitch = Bounce();
 
 // Los manejadores para las tareas
-TaskHandle_t THandleTaskCupulaRun,THandleTaskProcesaComandos,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed,THandleTaskEnviaMQTT;	
+TaskHandle_t THandleTaskCupulaRun,THandleTaskProcesaComandos,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed,THandleTaskEnviaRespuestas;	
 
 // Manejadores Colas
-QueueHandle_t ColaRecepcionMQTT,ColaEnvioMQTT;
+QueueHandle_t ColaComandos,ColaRespuestas;
 
 #pragma endregion
 
@@ -570,12 +561,6 @@ BMDomo1 MiCupula;
 
 #pragma region funciones de gestion de la configuracion
 
-// Funcion Callback disparada por el WifiManager para que sepamos que hay que hay una nueva configuracion que salvar (para los custom parameters).
-void saveConfigCallback() {
-	Serial.println("Lanzado SaveConfigCallback");
-	shouldSaveConfig = true;
-}
-
 // Funcion para leer la configuracion desde el fichero de configuracion
 void LeeConfig() {
 
@@ -649,13 +634,6 @@ void SalvaConfig() {
 #pragma endregion
 
 #pragma region Funciones de gestion de las conexiones Wifi
-
-// Funcion lanzada cuando entra en modo AP
-void APCallback(WiFiManager *wifiManager) {
-	Serial.println("Lanzado APCallback");
-	Serial.println(WiFi.softAPIP());
-	Serial.println(wifiManager->getConfigPortalSSID());
-}
 
 // Funcion ante un evento de la wifi
 void WiFiEventCallBack(WiFiEvent_t event) {
@@ -788,12 +766,12 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 			ObjJson.set("COMANDO",Comando);
 			ObjJson.set("PAYLOAD",s_payload);
 
-			char JSONmessageBufferTX[100];
-			ObjJson.printTo(JSONmessageBufferTX, sizeof(JSONmessageBufferTX));
+			char JSONmessageBuffer[100];
+			ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
 			//Serial.println(String(ObjJson.measureLength()));
 
 			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-			xQueueSend(ColaRecepcionMQTT, &JSONmessageBufferTX, 0);
+			xQueueSend(ColaComandos, &JSONmessageBuffer, 0);
 			
 		}
 
@@ -807,21 +785,27 @@ void onMqttPublish(uint16_t packetId) {
 
 }
 
-// Devuelve al topic correspondiente la respuesta a un comando. Esta funcion la uso como CALLBACK para el objeto cupula
+// Manda a la cola de respuestas el mensaje de respuesta. Esta funcion la uso como CALLBACK para el objeto cupula
 void MandaRespuesta(String comando, String payload) {
 
 			String t_topic = MiConfigMqtt.statTopic + "/" + comando;
 
 			DynamicJsonBuffer jsonBuffer;
 			JsonObject& ObjJson = jsonBuffer.createObject();
-			ObjJson.set("TOPIC",t_topic);
-			ObjJson.set("PAYLOAD",payload);
+			// Tipo de mensaje (MQTT, SERIE, BOTH)
+			ObjJson.set("TIPO","BOTH");
+			// Comando
+			ObjJson.set("CMND",comando);
+			// Topic (para MQTT)
+			ObjJson.set("MQTTT",t_topic);
+			// RESPUESTA
+			ObjJson.set("RESP",payload);
 
-			char JSONmessageBufferMR[200];
-			ObjJson.printTo(JSONmessageBufferMR, sizeof(JSONmessageBufferMR));
+			char JSONmessageBuffer[300];
+			ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
 			
 			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-			xQueueSend(ColaEnvioMQTT, &JSONmessageBufferMR, 0); 
+			xQueueSend(ColaRespuestas, &JSONmessageBuffer, 0); 
 
 }
 
@@ -834,19 +818,16 @@ void MandaTelemetria() {
 
 			DynamicJsonBuffer jsonBuffer;
 			JsonObject& ObjJson = jsonBuffer.createObject();
-			ObjJson.set("TOPIC",t_topic);
-			ObjJson.set("PAYLOAD",MiCupula.MiEstadoJson(1));
+			ObjJson.set("TIPO","MQTT");
+			ObjJson.set("CMND","TELE");
+			ObjJson.set("MQTTT",t_topic);
+			ObjJson.set("RESP",MiCupula.MiEstadoJson(1));
 			
-
-
-			char JSONmessageBuffer[200];
+			char JSONmessageBuffer[300];
 			ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
 			
 			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-			xQueueSendToBack(ColaEnvioMQTT, &JSONmessageBuffer, 0); 
-
-		//ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO1").c_str(),2, false ,(MiCupula.MiEstadoJson(1)).c_str());
-		//ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO2").c_str(),2, false, (MiCupula.MiEstadoJson(2)).c_str());
+			xQueueSendToBack(ColaRespuestas, &JSONmessageBuffer, 0); 
 
 	}
 	
@@ -1025,41 +1006,42 @@ void TaskProcesaComandos ( void * parameter ){
 	const TickType_t xFrequency = 100;
 	xLastWakeTime = xTaskGetTickCount ();
 
-	char JSONmessageBufferRX[100];
-	DynamicJsonBuffer jsonBufferRX;
+	char JSONmessageBuffer[100];
+	DynamicJsonBuffer jsonBuffer;
 	
-	String rx_Comando;
-	String rx_Payload;
-
+	String COMANDO;
+	String PAYLOAD;
+	
 	while (true){
 			
-			if (xQueueReceive(ColaRecepcionMQTT,&JSONmessageBufferRX,0) == pdTRUE ){
+			if (xQueueReceive(ColaComandos,&JSONmessageBuffer,0) == pdTRUE ){
 
 				//Serial.println("Procesando comando: " + String(JSONmessageBufferRX));
 
 				
-				JsonObject& ObjJson = jsonBufferRX.parseObject(JSONmessageBufferRX);
+				JsonObject& ObjJson = jsonBuffer.parseObject(JSONmessageBuffer);
 
 				//json.printTo(Serial);
 				if (ObjJson.success()) {
 					
 
-					rx_Comando = ObjJson["COMANDO"].as<String>();
-					rx_Payload = ObjJson["PAYLOAD"].as<String>();
+					COMANDO = ObjJson["COMANDO"].as<String>();
+					PAYLOAD = ObjJson["PAYLOAD"].as<String>();
+					
 
-					if (rx_Payload.indexOf(" ") >> 0) {
+					if (PAYLOAD.indexOf(" ") >> 0) {
 					
 						// COMANDO GOTO
-						if (rx_Comando == "GOTO") {
+						if (COMANDO == "GOTO") {
 
 							// Mover la cupula
 							// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round().
-							MiCupula.MoveTo(round(rx_Payload.toFloat()));
+							MiCupula.MoveTo(round(PAYLOAD.toFloat()));
 
 						}
 
 						// COMANDO STATUS
-						else if (rx_Comando == "FINDHOME") {
+						else if (COMANDO == "FINDHOME") {
 
 							
 							MiCupula.FindHome();
@@ -1068,9 +1050,9 @@ void TaskProcesaComandos ( void * parameter ){
 						}
 
 						// COMANDO STATUS
-						else if (rx_Comando == "INITHW") {
+						else if (COMANDO == "INITHW") {
 
-							MiCupula.IniciaCupula(rx_Payload);
+							MiCupula.IniciaCupula(PAYLOAD);
 
 						}
 						
@@ -1102,33 +1084,52 @@ void TaskProcesaComandos ( void * parameter ){
 
 }
 
-void TaskEnviaMQTT( void * parameter ){
+void TaskEnviaRespuestas( void * parameter ){
 
 	TickType_t xLastWakeTime;
 	const TickType_t xFrequency = 100;
 	xLastWakeTime = xTaskGetTickCount ();
 	
-	char JSONmessageBufferTE[200];
-	DynamicJsonBuffer jsonBufferTE;
+	char JSONmessageBuffer[300];
+	DynamicJsonBuffer jsonBuffer;
 	
-	String te_Topic;
-	String te_Payload;
+
 
 	while(true){
 
-		if (xQueueReceive(ColaEnvioMQTT,&JSONmessageBufferTE,0) == pdTRUE ){
+		if (xQueueReceive(ColaRespuestas,&JSONmessageBuffer,0) == pdTRUE ){
 
-				//Serial.println("Enviando MQTT: " + String(JSONmessageBufferTE));
-				
-				JsonObject& ObjJson = jsonBufferTE.parseObject(JSONmessageBufferTE);
+				JsonObject& ObjJson = jsonBuffer.parseObject(JSONmessageBuffer);
 
 				if (ObjJson.success()) {
 					
-					te_Topic = ObjJson["TOPIC"].as<String>();
-					te_Payload = ObjJson["PAYLOAD"].as<String>();
-				
-					ClienteMQTT.publish((te_Topic).c_str(), 2, false, te_Payload.c_str());
+					String TIPO = ObjJson["TIPO"].as<String>();
+					String CMND = ObjJson["CMND"].as<String>();
+					String MQTTT = ObjJson["MQTTT"].as<String>();
+					String RESP = ObjJson["RESP"].as<String>();
+					String resp_topic = MiConfigMqtt.teleTopic + "/RESPONSE";
+
+					if (TIPO == "BOTH"){
+
+						ClienteMQTT.publish(MQTTT.c_str(), 2, false, RESP.c_str());
+						if (CMND != "TELE") {ClienteMQTT.publish(resp_topic.c_str(), 2, false, RESP.c_str());}
+						Serial.println(CMND + " " + RESP);
+						
+					}
+
+					else 	if (TIPO == "MQTT"){
+
+						ClienteMQTT.publish(MQTTT.c_str(), 2, false, RESP.c_str());
+						if (CMND != "TELE") {ClienteMQTT.publish(resp_topic.c_str(), 2, false, RESP.c_str());}
+																		
+					}
 					
+					else 	if (TIPO == "SERIE"){
+
+							Serial.println(CMND + " " + RESP);
+						
+					}
+						
 				}
 		}
 
@@ -1229,46 +1230,8 @@ void setup() {
 	// Leer la configuracion que hay en el archivo de configuracion config.json
 	Serial.println("Leyendo fichero de configuracion");
 	LeeConfig();
-
-	// Añadir al wifimanager parametros para el MQTT
-	WiFiManagerParameter custom_mqtt_server("server", "mqtt server", MiConfigMqtt.mqtt_server, 40);
-	WiFiManagerParameter custom_mqtt_port("port", "mqtt port", MiConfigMqtt.mqtt_port, 5);
-	WiFiManagerParameter custom_mqtt_topic("topic", "mqtt topic", MiConfigMqtt.mqtt_topic, 34);
-	WiFiManagerParameter custom_mqtt_usuario("usuario", "mqtt user", MiConfigMqtt.mqtt_usuario, 20);
-	WiFiManagerParameter custom_mqtt_password("password", "mqtt password", MiConfigMqtt.mqtt_password, 20);
-
-	// Borrar la configuracion SSID y Password guardadas en EEPROM (Teoricamente esto hay que hacer despues de hace autoconect no se si esta bien aqui esto)
-	//wifiManager.resetSettings();
-	wifiManager.setDebugOutput(false);
-
-	// Definirle la funcion para aviso de que hay que salvar la configuracion
-	wifiManager.setSaveConfigCallback(saveConfigCallback);
-
-	// Definirle la funcion que se dispara cuando entra en modo AP
-	wifiManager.setAPCallback(APCallback);
-
-	WiFi.onEvent(WiFiEventCallBack);
-
-	// Añadir mis parametros custom
-	wifiManager.addParameter(&custom_mqtt_server);
-	wifiManager.addParameter(&custom_mqtt_port);
-	wifiManager.addParameter(&custom_mqtt_topic);
-	wifiManager.addParameter(&custom_mqtt_usuario);
-	wifiManager.addParameter(&custom_mqtt_password);
-
-	// Definir Calidad de Señal Minima para mantenerse conectado.
-	// Por defecto sin parametros 8%
-	wifiManager.setMinimumSignalQuality();
-
-	// Definir la salida de Debug por el serial del WifiManager
-	wifiManager.setDebugOutput(false);
-
-	// Arrancar yo la wifi a mano si quiero ponerle yo aqui una wifi. Si no el wifiManager va a pillar la configuracion de la EEPROM
-	//Serial.println(WiFi.begin("MIWIFI", "MIPASSWORD"));
 	
-	// Timeout para que si no configuramos el portal AP se cierre
-	wifiManager.setTimeout(300);
-
+	// MQTT
 	ClienteMQTT = AsyncMqttClient();
 
 	// Dar valor a las strings con los nombres de la estructura de los topics
@@ -1290,19 +1253,10 @@ void setup() {
 	ClienteMQTT.setKeepAlive(4);
 	ClienteMQTT.setWill(MiConfigMqtt.lwtTopic.c_str(),2,true,"Offline");
 
+	// WIFI
+	WiFi.onEvent(WiFiEventCallBack);
 	WiFi.begin();
-
-	// Leer los parametros custom que tiene el wifimanager por si los he actualizado yo en modo AP
-	strcpy(MiConfigMqtt.mqtt_server, custom_mqtt_server.getValue());
-	strcpy(MiConfigMqtt.mqtt_port, custom_mqtt_port.getValue());
-	strcpy(MiConfigMqtt.mqtt_topic, custom_mqtt_topic.getValue());
-
-	// Salvar la configuracion en el fichero de configuracion
-	if (shouldSaveConfig) {
-
-		SalvaConfig();
-	}
-
+	
 	// Instanciar el controlador de Stepper.
 	ControladorStepper = AccelStepper(AccelStepper::DRIVER, MECANICA_STEPPER_PULSEPIN , MECANICA_STEPPER_DIRPIN);
 	ControladorStepper.disableOutputs();
@@ -1313,22 +1267,17 @@ void setup() {
 	ControladorStepper.setPinsInverted(MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS);
 	ControladorStepper.setMinPulseWidth(MECANICA_STEPPER_ANCHO_PULSO); // Ancho minimo de pulso en microsegundos
 
+	// COLAS
+	ColaComandos = xQueueCreate(10,100);
+	ColaRespuestas = xQueueCreate(10,300);
 
-	// Lanzar las tareas infinitas a los cores a traves de las funciones del FreeRTOS
-	// xTaskCreate(TareaCore0,"CORE0",1000,NULL,1,&HandleTareaCore0)
-	// xTaskCreatePinnedToCore(TareaCore0,"CORE0",1000,NULL,1,&HandleTareaCore0,0)
-
+	// TASKS
 	Serial.println("Creando tareas ...");
 	
-	// Crear la cola para los comandos MQTT recibidos (para 5)
-	//ColaRecepcionMQTT = xQueueCreate( 5, sizeof( struct MQTTCMD ) );
-	ColaRecepcionMQTT = xQueueCreate(10,100);
-	ColaEnvioMQTT = xQueueCreate(10,200);
-			
 	// Tareas CORE0
 	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
 	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,0);
-	xTaskCreatePinnedToCore(TaskEnviaMQTT,"EnviaMQTT",2000,NULL,1,&THandleTaskEnviaMQTT,0);
+	xTaskCreatePinnedToCore(TaskEnviaRespuestas,"EnviaMQTT",2000,NULL,1,&THandleTaskEnviaRespuestas,0);
 	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,0);
 	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
 	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,0);
