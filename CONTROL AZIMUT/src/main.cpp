@@ -144,8 +144,7 @@ private:
 	bool Inicializando;						// Para saber que estamos ejecutando el comando INITHW
 	bool BuscandoCasa;						// Para saber que estamos ejecutando el comando FINDHOME
 	float TotalPasos;							// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
-	long UltimoAzimutEnviado;			// Para saber cual es el ultimo Azimut enviado por MQTT
-	
+		
 	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
 	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
 	// Solo tengo que definirla y cuando cree el objeto de esta clase en mi programa, creo la funcion con esta misma estructura y se la "paso" a la clase
@@ -201,7 +200,6 @@ BMDomo1::BMDomo1() {
 	Slewing = false;			
 	BuscandoCasa = false;
 	AtHome = false;
-	UltimoAzimutEnviado = 0;
 	TotalPasos = (float)(MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR) / (float)(MECANICA_DIENTES_PINON_ATAQUE);
 }
 
@@ -554,17 +552,6 @@ void BMDomo1::Run() {
 		Inicializando = false;
 				
 	}
-
-	// Informar a la salida del comando AZIMUT cada cambio del mismo.
-	long t_azimut = GetCurrentAzimut();
-
-	if (UltimoAzimutEnviado != t_azimut){
-
-		MiRespondeComandos("AZIMUTH", String(t_azimut));
-		UltimoAzimutEnviado = t_azimut;
-
-	}
-
 	
 }
 
@@ -830,7 +817,7 @@ void MandaRespuesta(String comando, String payload) {
 			ObjJson.set("TOPIC",t_topic);
 			ObjJson.set("PAYLOAD",payload);
 
-			char JSONmessageBufferMR[100];
+			char JSONmessageBufferMR[200];
 			ObjJson.printTo(JSONmessageBufferMR, sizeof(JSONmessageBufferMR));
 			
 			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
@@ -843,7 +830,22 @@ void MandaTelemetria() {
 	
 	if (ClienteMQTT.connected()){
 
-		ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO1").c_str(),2, false ,(MiCupula.MiEstadoJson(1)).c_str());
+			String t_topic = MiConfigMqtt.teleTopic + "/INFO1";
+
+			DynamicJsonBuffer jsonBuffer;
+			JsonObject& ObjJson = jsonBuffer.createObject();
+			ObjJson.set("TOPIC",t_topic);
+			ObjJson.set("PAYLOAD",MiCupula.MiEstadoJson(1));
+			
+
+
+			char JSONmessageBuffer[200];
+			ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+			
+			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
+			xQueueSendToBack(ColaEnvioMQTT, &JSONmessageBuffer, 0); 
+
+		//ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO1").c_str(),2, false ,(MiCupula.MiEstadoJson(1)).c_str());
 		//ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/INFO2").c_str(),2, false, (MiCupula.MiEstadoJson(2)).c_str());
 
 	}
@@ -1033,7 +1035,7 @@ void TaskProcesaComandos ( void * parameter ){
 			
 			if (xQueueReceive(ColaRecepcionMQTT,&JSONmessageBufferRX,0) == pdTRUE ){
 
-				Serial.println("Procesando comando: " + String(JSONmessageBufferRX));
+				//Serial.println("Procesando comando: " + String(JSONmessageBufferRX));
 
 				
 				JsonObject& ObjJson = jsonBufferRX.parseObject(JSONmessageBufferRX);
@@ -1051,7 +1053,7 @@ void TaskProcesaComandos ( void * parameter ){
 						if (rx_Comando == "GOTO") {
 
 							// Mover la cupula
-							// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round(). Con esto la cupula tendra una precision de 0.5º
+							// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round().
 							MiCupula.MoveTo(round(rx_Payload.toFloat()));
 
 						}
@@ -1106,7 +1108,7 @@ void TaskEnviaMQTT( void * parameter ){
 	const TickType_t xFrequency = 100;
 	xLastWakeTime = xTaskGetTickCount ();
 	
-	char JSONmessageBufferTE[100];
+	char JSONmessageBufferTE[200];
 	DynamicJsonBuffer jsonBufferTE;
 	
 	String te_Topic;
@@ -1116,7 +1118,7 @@ void TaskEnviaMQTT( void * parameter ){
 
 		if (xQueueReceive(ColaEnvioMQTT,&JSONmessageBufferTE,0) == pdTRUE ){
 
-				Serial.println("Enviando MQTT: " + String(JSONmessageBufferTE));
+				//Serial.println("Enviando MQTT: " + String(JSONmessageBufferTE));
 				
 				JsonObject& ObjJson = jsonBufferTE.parseObject(JSONmessageBufferTE);
 
@@ -1126,7 +1128,7 @@ void TaskEnviaMQTT( void * parameter ){
 					te_Payload = ObjJson["PAYLOAD"].as<String>();
 				
 					ClienteMQTT.publish((te_Topic).c_str(), 2, false, te_Payload.c_str());
-
+					
 				}
 		}
 
@@ -1140,7 +1142,7 @@ void TaskEnviaMQTT( void * parameter ){
 void TaskCupulaRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 50;
+	const TickType_t xFrequency = 100;
 	xLastWakeTime = xTaskGetTickCount ();
 	
 	while(true){
@@ -1187,7 +1189,7 @@ void TaskComandosSerieRun( void * parameter ){
 void TaskMandaTelemetria( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 5000;
+	const TickType_t xFrequency = 2000;
 	xLastWakeTime = xTaskGetTickCount ();
 	
 
@@ -1321,15 +1323,15 @@ void setup() {
 	// Crear la cola para los comandos MQTT recibidos (para 5)
 	//ColaRecepcionMQTT = xQueueCreate( 5, sizeof( struct MQTTCMD ) );
 	ColaRecepcionMQTT = xQueueCreate(10,100);
-	ColaEnvioMQTT = xQueueCreate(10,100);
+	ColaEnvioMQTT = xQueueCreate(10,200);
 			
 	// Tareas CORE0
 	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
 	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,0);
 	xTaskCreatePinnedToCore(TaskEnviaMQTT,"EnviaMQTT",2000,NULL,1,&THandleTaskEnviaMQTT,0);
 	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,0);
-	//xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
-	//xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,0);
+	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
+	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,0);
 	
 	// Tareas CORE1. No lanzo ninguna lo hago en el loop() que es una tarea unica en el CORE1
 	// Lo hago asi porque necesito muchisima velocidad y FreeRTOS solo puede cambiar entre tareas a 1Khz.
