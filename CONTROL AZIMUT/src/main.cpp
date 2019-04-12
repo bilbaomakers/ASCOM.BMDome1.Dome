@@ -15,7 +15,6 @@ Author:		 Diego Maroto - BilbaoMakers 2019 - info@bilbaomakers.org
 
 Cosas a hacer en el futuro
 
-
 - Implementar uno a varios Led WS2812 para informar del estado de lo importante
 - Implementar calculo de rotacion basado en mi posicion para "predecir" el movimiento del objeto y poder hacer seguimiento auntonomo automatico
 				
@@ -23,6 +22,19 @@ Cosas de configuracion a pasar desde el Driver
 
 		- El Azimut cuando esta en HOME
 		- El Azimut del PARK
+
+
+NOTAS SOBRE EL STEPPER Y LA LIBRERIA ACCELSTEPPER
+
+- El ancho minimo de pulso que puede generar la libreria es 20uS, por tanto el periodo minimo es 40uS - Frecuencia Maxima 25Khz
+- Una velocidad de motor aceptable inicialmente son 50 revoluciones por minuto (50 tiene el motor de puerta corredera actual pero como soy un maniatico me gusta mas 60)
+- Eso es 1 vuelta por segundo en la reductora, que como es 1:6 son 6 revoluciones / segundo del motor
+- A 3200 pulsos por vuelta en la controladora, para 6 rev/segundo son 19200 pulsos por segundo. Es el maximo que puedo exprimir la libreria.
+- Determinaremos la velocidad optima de la cupula "in situ", originalmente probaremos mas lento cuando montemos.
+
+- Para ejecutar el comando "run" de la libreria Accelstepper vamos a usar la interrupcion de un timer.
+- ESP32 tiene 4 timers que funcionan a una frecuencia de 80 MHz (Ole!). Nos sobra "velocidad" que te cagas aqui
+- No tengo ni idea de cuantos ciclos de reloj usa el run() de la libreria (lo investigare a ver)
 
 */
 
@@ -52,9 +64,9 @@ Cosas de configuracion a pasar desde el Driver
 static const uint8_t MECANICA_STEPPER_PULSEPIN = 36;					// Pin de pulsos del stepper
 static const uint8_t MECANICA_STEPPER_DIRPIN = 39;						// Pin de direccion del stepper
 static const uint8_t MECANICA_STEPPER_ENABLEPING = 34;				// Pin de enable del stepper
-static const float MECANICA_STEPPER_MAXSPEED = 10000;					// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXACELERAION = 3200;			// Aceleracion maxima del stepper
-static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 3200;		// Numero de pasos por vuelta del STEPPER
+static const float MECANICA_STEPPER_MAXSPEED = 19200;					// Velocidad maxima del stepper (pasos por segundo)
+static const float MECANICA_STEPPER_MAXACELERAION = (MECANICA_STEPPER_MAXSPEED / 3);			// Aceleracion maxima del stepper (pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
+static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 3200;		// Numero de pasos por vuelta del STEPPER (Configuracion del controlador)
 static const short MECANICA_RATIO_REDUCTORA = 6;							// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 16;				// Numero de dientes del piños de ataque
 static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 981;	// Numero de dientes de la cremallera de la cupula
@@ -100,9 +112,9 @@ struct MQTTCFG
 // Para la conexion MQTT
 AsyncMqttClient  ClienteMQTT;
 
-long lastMsg = 0;
-char msg[50];
-int value = 0;
+//long lastMsg = 0;
+//char msg[50];
+//int value = 0;
 
 // Controlador Stepper
 AccelStepper ControladorStepper;
@@ -110,10 +122,13 @@ AccelStepper ControladorStepper;
 // Objetos debouncer para los switches
 Bounce Debouncer_HomeSwitch = Bounce();
 
-// Los manejadores para las tareas
+// Timer para lanzar el run del Stepper. Hacemos con la interrupcion de un timer porque esta funcion es para generar señal de "reloj" y ha de ser perfecta.
+hw_timer_t * TimerStepper;
+
+// Los manejadores para las tareas. El resto de las cosas que hace nuestro controlador que son un poco mas flexibles que la de los pulsos del Stepper
 TaskHandle_t THandleTaskCupulaRun,THandleTaskProcesaComandos,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed,THandleTaskEnviaRespuestas;	
 
-// Manejadores Colas
+// Manejadores Colas para comunicaciones inter-tareas
 QueueHandle_t ColaComandos,ColaRespuestas;
 
 #pragma endregion
@@ -977,6 +992,48 @@ SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_c
 
 #pragma region TASKS
 
+
+// Para intentar controlar la funcion del timer. No me deja usar la FPU y tengo floats en el AccelStepper
+// Con el codigo raruno parece que habilito el FPU pero ahora desbordo la pila.
+uint32_t cp0_regs[18];
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
+// La tarea que se dispara con el Timer. IRAM_ATTR carga en RAM el programa para poder ejecutar como una flecha.
+void IRAM_ATTR onTimerStepperTimer()
+{
+  
+				portENTER_CRITICAL_ISR(&mux);
+				
+				uint32_t cp_state = xthal_get_cpenable();
+
+        if(!cp_state) {
+            xthal_set_cpenable(1);
+        }
+
+        xthal_save_cp0(cp0_regs);   // Save FPU registers
+
+
+
+					//ControladorStepper.run();
+
+
+
+        xthal_restore_cp0(cp0_regs);
+
+        if(cp_state) {
+            // Restore FPU registers
+
+        } else {
+            // turn it back off
+            xthal_set_cpenable(0);
+        }
+
+				portEXIT_CRITICAL_ISR(&mux);
+
+}
+
+
+
 // Tarea para vigilar la conexion con el MQTT y conectar si no estamos conectados
 void TaskGestionRed ( void * parameter ) {
 
@@ -1274,7 +1331,18 @@ void setup() {
 	// TASKS
 	Serial.println("Creando tareas ...");
 	
-	// Tareas CORE0
+	// La del Stepper disparada por interrupcion del TIMER0. Nota: No tengo muy claro como forzar el core que la ejecuta. Creo que el que la defina. Lo mirare mejor ....
+	// Timer0, preescaler a 80 (80Mhz / 80 = 1Mhz - Resolucion del timer 1uS), cuenta ascendente(true)
+	TimerStepper = timerBegin(0, 80, true);
+	// Habilitar la interrupcion y pasarle la funciona callback. Timer,callback,Disparo por edge (false por level)
+	timerAttachInterrupt(TimerStepper, &onTimerStepperTimer, true);
+	//Configurar Temporizador. Tiempo de disparo (10 conteos. Como preescaler tenemos 80 cada conteo es 1uS = 10uS). Afinaremos para disparar al minimo
+	timerAlarmWrite(TimerStepper, 10, true);
+	// Arrancar el timer
+	timerAlarmEnable(TimerStepper);
+
+
+	// Tareas CORE0 gestinadas por FreeRTOS
 	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
 	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,0);
 	xTaskCreatePinnedToCore(TaskEnviaRespuestas,"EnviaMQTT",2000,NULL,1,&THandleTaskEnviaRespuestas,0);
@@ -1296,7 +1364,7 @@ void setup() {
 // Funcion LOOP de Arduino
 void loop() {
 		
-		ControladorStepper.run();
+		//ControladorStepper.run();
 		Debouncer_HomeSwitch.update();
 
 }
