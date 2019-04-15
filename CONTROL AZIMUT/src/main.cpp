@@ -854,6 +854,69 @@ void MandaTelemetria() {
 
 #pragma region Funciones de implementacion de los comandos disponibles por el puerto serie
 
+char BufferSerial[100];
+int16_t LenBufferSerial=(BufferSerial!=NULL && LenBufferSerial > 0 ? LenBufferSerial - 1 : 0);
+int16_t PosBufferSerial=0;
+char* FinalLinea = "\r\n";
+int8_t PosicionFinalLinea=0;
+
+char* ReadSerial(Stream* serial) {
+
+	while (serial->available() > 0) {
+
+		Serial.println("DATO");
+		Serial.println(BufferSerial);
+		
+		int ch = serial->read();
+
+		if (ch <= 0) {
+
+			continue;
+
+		}
+
+		if (PosBufferSerial < LenBufferSerial) {
+
+			BufferSerial[PosBufferSerial++] = ch;
+		}
+
+		else {
+
+			return "ERROR";
+
+		}
+
+		if (FinalLinea[PosicionFinalLinea] != ch)
+		{
+			PosicionFinalLinea = 0;
+			continue;
+		}
+
+		if (FinalLinea[++PosicionFinalLinea] == 0)
+		{
+			BufferSerial[PosBufferSerial - strlen(FinalLinea)] = '\0';
+
+			char* command = strtok_r(BufferSerial, " ", NULL);
+
+			Serial.println(command);
+
+			return "OK";
+			
+			// limpiar buffer
+			BufferSerial[0] = '\0';
+			PosBufferSerial = 0;
+			PosicionFinalLinea = 0;
+
+		}
+
+		
+
+	}
+
+	
+}
+
+
 // Manejadores de los comandos. Aqui dentro lo que queramos hacer con cada comando.
 void cmd_WIFI_hl(SerialCommands* sender)
 {
@@ -1195,7 +1258,9 @@ void TaskComandosSerieRun( void * parameter ){
 
 	while(true){
 
-		serial_commands_.ReadSerial();
+		//serial_commands_.ReadSerial();
+
+		ReadSerial(&Serial);
 
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
