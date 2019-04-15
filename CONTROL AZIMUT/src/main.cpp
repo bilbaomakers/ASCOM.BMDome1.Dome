@@ -112,18 +112,9 @@ struct MQTTCFG
 // Para la conexion MQTT
 AsyncMqttClient  ClienteMQTT;
 
-//long lastMsg = 0;
-//char msg[50];
-//int value = 0;
-
 // Controlador Stepper
 AccelStepper ControladorStepper;
 
-// Objetos debouncer para los switches
-Bounce Debouncer_HomeSwitch = Bounce();
-
-// Timer para lanzar el run del Stepper. Hacemos con la interrupcion de un timer porque esta funcion es para generar señal de "reloj" y ha de ser perfecta.
-hw_timer_t * TimerStepper;
 
 // Los manejadores para las tareas. El resto de las cosas que hace nuestro controlador que son un poco mas flexibles que la de los pulsos del Stepper
 TaskHandle_t THandleTaskCupulaRun,THandleTaskProcesaComandos,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed,THandleTaskEnviaRespuestas;	
@@ -150,6 +141,8 @@ private:
 	bool Inicializando;						// Para saber que estamos ejecutando el comando INITHW
 	bool BuscandoCasa;						// Para saber que estamos ejecutando el comando FINDHOME
 	float TotalPasos;							// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
+	Bounce Debouncer_HomeSwitch = Bounce(); // Objeto debouncer para el switch HOME
+
 		
 	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
 	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
@@ -165,7 +158,7 @@ private:
 
 public:
 
-	BMDomo1();		// Constructor (es la funcion que devuelve un Objeto de esta clase)
+	BMDomo1(uint8_t PinHome);		// Constructor (es la funcion que devuelve un Objeto de esta clase)
 	~BMDomo1() {};	// Destructor (Destruye el objeto, o sea, lo borra de la memoria)
 
 
@@ -196,7 +189,7 @@ public:
 #pragma region IMPLEMENTACIONES BMDomo1
 
 // Constructor. Lo que sea que haya que hacer antes de devolver el objeto de esta clase al creador.
-BMDomo1::BMDomo1() {	
+BMDomo1::BMDomo1(uint8_t PinHome) {	
 
 	HardwareInfo = "BMDome1.HWAz1.0";
 	Inicializando = false;
@@ -207,6 +200,11 @@ BMDomo1::BMDomo1() {
 	BuscandoCasa = false;
 	AtHome = false;
 	TotalPasos = (float)(MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR) / (float)(MECANICA_DIENTES_PINON_ATAQUE);
+	// Inicializacion del sensor de HOMME
+	pinMode(PinHome, INPUT_PULLUP);
+	Debouncer_HomeSwitch.attach(PinHome);
+	Debouncer_HomeSwitch.interval(5);
+
 }
 
 #pragma region Funciones Privadas
@@ -491,6 +489,9 @@ void BMDomo1::MoveTo(int grados) {
 // Esta funcion se lanza desde el loop. Es la que hace las comprobaciones. No debe atrancarse nunca tampoco (ni esta ni ninguna)
 void BMDomo1::Run() {
 
+	// Actualizar la lectura de los switches
+	Debouncer_HomeSwitch.update();
+
 	// Una importante es actualizar la propiedad Slewing con el estado del motor paso a paso. 
 	Slewing = ControladorStepper.isRunning();
 
@@ -569,7 +570,7 @@ void BMDomo1::Run() {
 
 // Objeto de la clase BMDomo1. Es necesario definirlo aqui debajo de la definicion de clase. No puedo en la region de arriba donde tengo los demas
 // Eso es porque la clase usa objetos de fuera. Esto es chapuza pero de momento asi no me lio. Despues todo por referencia y la clase esta debajo de los includes o en una libreria a parte. Asi esntonces estaria OK.
-BMDomo1 MiCupula;
+BMDomo1 MiCupula(MECANICA_SENSOR_HOME);
 
 
 #pragma endregion
@@ -993,47 +994,6 @@ SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_c
 #pragma region TASKS
 
 
-// Para intentar controlar la funcion del timer. No me deja usar la FPU y tengo floats en el AccelStepper
-// Con el codigo raruno parece que habilito el FPU pero ahora desbordo la pila.
-uint32_t cp0_regs[18];
-portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
-
-// La tarea que se dispara con el Timer. IRAM_ATTR carga en RAM el programa para poder ejecutar como una flecha.
-void IRAM_ATTR onTimerStepperTimer()
-{
-  
-				portENTER_CRITICAL_ISR(&mux);
-				
-				uint32_t cp_state = xthal_get_cpenable();
-
-        if(!cp_state) {
-            xthal_set_cpenable(1);
-        }
-
-        xthal_save_cp0(cp0_regs);   // Save FPU registers
-
-
-
-					//ControladorStepper.run();
-
-
-
-        xthal_restore_cp0(cp0_regs);
-
-        if(cp_state) {
-            // Restore FPU registers
-
-        } else {
-            // turn it back off
-            xthal_set_cpenable(0);
-        }
-
-				portEXIT_CRITICAL_ISR(&mux);
-
-}
-
-
-
 // Tarea para vigilar la conexion con el MQTT y conectar si no estamos conectados
 void TaskGestionRed ( void * parameter ) {
 
@@ -1274,17 +1234,10 @@ void setup() {
 
 	Serial.println("-- Iniciando Controlador Azimut --");
 
-	// Instanciar el objeto MiCupula. Se inicia el solo (o deberia) con las propiedades en estado guay
-	MiCupula = BMDomo1();
 	// Asignar funciones Callback de Micupula
 	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
 		
-	// Inicializacion de las GPIO
-	pinMode(MECANICA_SENSOR_HOME, INPUT_PULLUP);
-	Debouncer_HomeSwitch.attach(MECANICA_SENSOR_HOME);
-	Debouncer_HomeSwitch.interval(5);
-
-	// Leer la configuracion que hay en el archivo de configuracion config.json
+		// Leer la configuracion que hay en el archivo de configuracion config.json
 	Serial.println("Leyendo fichero de configuracion");
 	LeeConfig();
 	
@@ -1296,7 +1249,8 @@ void setup() {
 	MiConfigMqtt.statTopic = "stat/" + String(MiConfigMqtt.mqtt_topic);
 	MiConfigMqtt.teleTopic = "tele/" + String(MiConfigMqtt.mqtt_topic);
 	MiConfigMqtt.lwtTopic = MiConfigMqtt.teleTopic + "/LWT";
-		
+
+	// Las funciones callback de la libreria MQTT	
 	ClienteMQTT.onConnect(onMqttConnect);
   ClienteMQTT.onDisconnect(onMqttDisconnect);
   ClienteMQTT.onSubscribe(onMqttSubscribe);
@@ -1331,22 +1285,12 @@ void setup() {
 	// TASKS
 	Serial.println("Creando tareas ...");
 	
-	// La del Stepper disparada por interrupcion del TIMER0. Nota: No tengo muy claro como forzar el core que la ejecuta. Creo que el que la defina. Lo mirare mejor ....
-	// Timer0, preescaler a 80 (80Mhz / 80 = 1Mhz - Resolucion del timer 1uS), cuenta ascendente(true)
-	TimerStepper = timerBegin(0, 80, true);
-	// Habilitar la interrupcion y pasarle la funciona callback. Timer,callback,Disparo por edge (false por level)
-	timerAttachInterrupt(TimerStepper, &onTimerStepperTimer, true);
-	//Configurar Temporizador. Tiempo de disparo (10 conteos. Como preescaler tenemos 80 cada conteo es 1uS = 10uS). Afinaremos para disparar al minimo
-	timerAlarmWrite(TimerStepper, 10, true);
-	// Arrancar el timer
-	timerAlarmEnable(TimerStepper);
-
 
 	// Tareas CORE0 gestinadas por FreeRTOS
 	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
 	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,0);
 	xTaskCreatePinnedToCore(TaskEnviaRespuestas,"EnviaMQTT",2000,NULL,1,&THandleTaskEnviaRespuestas,0);
-	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,0);
+	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,2,&THandleTaskCupulaRun,0);
 	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
 	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,0);
 	
@@ -1364,9 +1308,9 @@ void setup() {
 // Funcion LOOP de Arduino
 void loop() {
 		
-		//ControladorStepper.run();
-		Debouncer_HomeSwitch.update();
-
+		// Solo la funcion de la libreria del Stepper que se come un nucleo casi.
+		ControladorStepper.run();
+	
 }
 
 #pragma endregion
