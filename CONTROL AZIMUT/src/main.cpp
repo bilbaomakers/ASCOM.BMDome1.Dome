@@ -854,68 +854,25 @@ void MandaTelemetria() {
 
 #pragma region Funciones de implementacion de los comandos disponibles por el puerto serie
 
-char BufferSerial[100];
-int16_t LenBufferSerial=(BufferSerial!=NULL && LenBufferSerial > 0 ? LenBufferSerial - 1 : 0);
-int16_t PosBufferSerial=0;
-char* FinalLinea = "\r\n";
-int8_t PosicionFinalLinea=0;
+String inputString = "";
 
-char* ReadSerial(Stream* serial) {
+void serialEvent() {
 
-	while (serial->available() > 0) {
-
-		Serial.println("DATO");
-		Serial.println(BufferSerial);
-		
-		int ch = serial->read();
-
-		if (ch <= 0) {
-
-			continue;
-
-		}
-
-		if (PosBufferSerial < LenBufferSerial) {
-
-			BufferSerial[PosBufferSerial++] = ch;
-		}
-
-		else {
-
-			return "ERROR";
-
-		}
-
-		if (FinalLinea[PosicionFinalLinea] != ch)
-		{
-			PosicionFinalLinea = 0;
-			continue;
-		}
-
-		if (FinalLinea[++PosicionFinalLinea] == 0)
-		{
-			BufferSerial[PosBufferSerial - strlen(FinalLinea)] = '\0';
-
-			char* command = strtok_r(BufferSerial, " ", NULL);
-
-			Serial.println(command);
-
-			return "OK";
-			
-			// limpiar buffer
-			BufferSerial[0] = '\0';
-			PosBufferSerial = 0;
-			PosicionFinalLinea = 0;
-
-		}
-
-		
-
-	}
-
+	Serial.println(inputString);
 	
+  while (Serial.available()) {
+    // get the new byte:
+    char inChar = (char)Serial.read();
+    // add it to the inputString:
+    inputString += inChar;
+    // if the incoming character is a newline, set a flag so the main loop can
+    // do something about it:
+    if (inChar == '\n') {
+      Serial.println(inputString);
+      inputString = "";
+    }
+  }
 }
-
 
 // Manejadores de los comandos. Aqui dentro lo que queramos hacer con cada comando.
 void cmd_WIFI_hl(SerialCommands* sender)
@@ -1061,7 +1018,7 @@ SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_c
 void TaskGestionRed ( void * parameter ) {
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 2000;
+	const TickType_t xFrequency = 10000;
 	xLastWakeTime = xTaskGetTickCount ();
 
 
@@ -1255,14 +1212,14 @@ void TaskComandosSerieRun( void * parameter ){
 	// Manejador para los comandos Serie no reconocidos.
 	serial_commands_.SetDefaultHandler(&cmd_error);
 
-
 	while(true){
 
+		
 		//serial_commands_.ReadSerial();
-
-		ReadSerial(&Serial);
+		//ReadSerial(&Serial);
 
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
+
 
 	}
 	
