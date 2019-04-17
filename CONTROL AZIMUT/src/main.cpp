@@ -49,20 +49,20 @@ Cosas de configuracion a pasar desde el Driver
 #pragma region Constantes y configuracion. Modificable aqui por el usuario
 
 // Para la configuracion de conjunto Mecanico de arrastre
-static const uint8_t MECANICA_STEPPER_PULSEPIN = 36;					// Pin de pulsos del stepper
-static const uint8_t MECANICA_STEPPER_DIRPIN = 39;						// Pin de direccion del stepper
-static const uint8_t MECANICA_STEPPER_ENABLEPING = 34;				// Pin de enable del stepper
-static const float MECANICA_STEPPER_MAXSPEED = 10000;					// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXACELERAION = 3200;			// Aceleracion maxima del stepper
-static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 3200;		// Numero de pasos por vuelta del STEPPER
+static const uint8_t MECANICA_STEPPER_PULSEPIN = 32;					// Pin de pulsos del stepper
+static const uint8_t MECANICA_STEPPER_DIRPIN = 25;						// Pin de direccion del stepper
+static const uint8_t MECANICA_STEPPER_ENABLEPING = 33;				// Pin de enable del stepper
+static const float MECANICA_STEPPER_MAXSPEED = 4000;					// Velocidad maxima del stepper (pasos por segundo)
+static const float MECANICA_STEPPER_MAXACELERAION = 500;			// Aceleracion maxima del stepper
+static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;		// Numero de pasos por vuelta del STEPPER
 static const short MECANICA_RATIO_REDUCTORA = 6;							// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 16;				// Numero de dientes del piños de ataque
 static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 981;	// Numero de dientes de la cremallera de la cupula
-static const boolean MECANICA_STEPPER_INVERTPINS = true;			// Invertir la logica de los pines de control (pulso 1 o pulso 0)
+static const boolean MECANICA_STEPPER_INVERTPINS = false;			// Invertir la logica de los pines de control (pulso 1 o pulso 0)
 static const int MECANICA_STEPPER_ANCHO_PULSO = 20;						// Ancho de los pulsos
 
 // Otros sensores
-static const uint8_t MECANICA_SENSOR_HOME = 35;								// Pin para el sensor de HOME
+static const uint8_t MECANICA_SENSOR_HOME = 26;								// Pin para el sensor de HOME
 
 // Para el ticker del BMDomo1
 unsigned long TIEMPO_TICKER_RAPIDO = 500;
