@@ -297,7 +297,7 @@ String BMDomo1::MiEstadoJson(int categoria) {
 
 	// devolver el char array con el JSON
 	return JSONmessageBuffer;
-
+	
 }
 
 // Metodos (funciones). TODAS Salvo la RUN() deben ser ASINCRONAS. Jamas se pueden quedar uno esperando. Esperar a lo bobo ESTA PROHIBIDISISISISMO, tenemos MUCHAS cosas que hacer ....
@@ -854,26 +854,6 @@ void MandaTelemetria() {
 
 #pragma region Funciones de implementacion de los comandos disponibles por el puerto serie
 
-String inputString = "";
-
-void serialEvent() {
-
-	Serial.println(inputString);
-	
-  while (Serial.available()) {
-    // get the new byte:
-    char inChar = (char)Serial.read();
-    // add it to the inputString:
-    inputString += inChar;
-    // if the incoming character is a newline, set a flag so the main loop can
-    // do something about it:
-    if (inChar == '\n') {
-      Serial.println(inputString);
-      inputString = "";
-    }
-  }
-}
-
 // Manejadores de los comandos. Aqui dentro lo que queramos hacer con cada comando.
 void cmd_WIFI_hl(SerialCommands* sender)
 {
@@ -1025,7 +1005,7 @@ void TaskGestionRed ( void * parameter ) {
 	while(true){
 
 		if (WiFi.isConnected() && !ClienteMQTT.connected()){
-
+			
 			ClienteMQTT.connect();
 			
 		}
@@ -1044,18 +1024,20 @@ void TaskProcesaComandos ( void * parameter ){
 	xLastWakeTime = xTaskGetTickCount ();
 
 	char JSONmessageBuffer[100];
-	DynamicJsonBuffer jsonBuffer;
-	
-	String COMANDO;
-	String PAYLOAD;
 	
 	while (true){
 			
+			// Limpiar el Buffer
+			memset(JSONmessageBuffer, 0, sizeof JSONmessageBuffer);
+
 			if (xQueueReceive(ColaComandos,&JSONmessageBuffer,0) == pdTRUE ){
 
 				//Serial.println("Procesando comando: " + String(JSONmessageBufferRX));
 
-				
+				String COMANDO;
+				String PAYLOAD;
+				DynamicJsonBuffer jsonBuffer;
+
 				JsonObject& ObjJson = jsonBuffer.parseObject(JSONmessageBuffer);
 
 				//json.printTo(Serial);
@@ -1097,7 +1079,8 @@ void TaskProcesaComandos ( void * parameter ){
 
 					else {
 
-						Serial.println("Me ha llegado un comando con demasiados parametros");
+						Serial.print("Me ha llegado un comando con demasiados parametros: ");
+						Serial.println(JSONmessageBuffer);
 
 					}
 
@@ -1107,7 +1090,8 @@ void TaskProcesaComandos ( void * parameter ){
 
 				else {
 
-						Serial.println("Me ha llegado un comando que no puedo Deserializar");
+						Serial.print("Me ha llegado un comando que no puedo Deserializar: ");
+						Serial.println(JSONmessageBuffer);
 
 				}
 
@@ -1121,6 +1105,7 @@ void TaskProcesaComandos ( void * parameter ){
 
 }
 
+// Tarea para procesar la cola de respuestas
 void TaskEnviaRespuestas( void * parameter ){
 
 	TickType_t xLastWakeTime;
@@ -1128,13 +1113,16 @@ void TaskEnviaRespuestas( void * parameter ){
 	xLastWakeTime = xTaskGetTickCount ();
 	
 	char JSONmessageBuffer[300];
-	DynamicJsonBuffer jsonBuffer;
 	
-
 
 	while(true){
 
+		// Limpiar el Buffer
+		memset(JSONmessageBuffer, 0, sizeof JSONmessageBuffer);
+
 		if (xQueueReceive(ColaRespuestas,&JSONmessageBuffer,0) == pdTRUE ){
+
+				DynamicJsonBuffer jsonBuffer;
 
 				JsonObject& ObjJson = jsonBuffer.parseObject(JSONmessageBuffer);
 
@@ -1176,7 +1164,7 @@ void TaskEnviaRespuestas( void * parameter ){
 
 }
 
-// Tarea para "atender" a los mensajes MQTT. Hay que ver tambien cuan rapido podemos ejecutarla
+// Tarea para el metodo run del objeto de la cupula.
 void TaskCupulaRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
@@ -1213,13 +1201,10 @@ void TaskComandosSerieRun( void * parameter ){
 	serial_commands_.SetDefaultHandler(&cmd_error);
 
 	while(true){
-
 		
-		//serial_commands_.ReadSerial();
-		//ReadSerial(&Serial);
-
+		serial_commands_.ReadSerial();
+		
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
-
 
 	}
 	
@@ -1312,7 +1297,7 @@ void setup() {
 	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
 	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,0);
 	xTaskCreatePinnedToCore(TaskEnviaRespuestas,"EnviaMQTT",2000,NULL,1,&THandleTaskEnviaRespuestas,0);
-	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,2,&THandleTaskCupulaRun,0);
+	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,0);
 	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
 	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,0);
 	
