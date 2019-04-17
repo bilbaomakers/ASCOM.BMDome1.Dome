@@ -60,13 +60,15 @@ NOTAS SOBRE EL STEPPER Y LA LIBRERIA ACCELSTEPPER
 
 #pragma region Constantes y configuracion. Modificable aqui por el usuario
 
+#define CONFIG_TASK_WDT_CHECK_IDLE_TASK_CPU1 0
+
 // Para la configuracion de conjunto Mecanico de arrastre
 static const uint8_t MECANICA_STEPPER_PULSEPIN = 32;					// Pin de pulsos del stepper
 static const uint8_t MECANICA_STEPPER_DIRPIN = 25;						// Pin de direccion del stepper
 static const uint8_t MECANICA_STEPPER_ENABLEPING = 33;				// Pin de enable del stepper
-static const float MECANICA_STEPPER_MAXSPEED = 19200;					// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXACELERAION = (MECANICA_STEPPER_MAXSPEED / 3);			// Aceleracion maxima del stepper (pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
-static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 3200;		// Numero de pasos por vuelta del STEPPER (Configuracion del controlador)
+static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;		// Numero de pasos por vuelta del STEPPER (Configuracion del controlador)
+static const float MECANICA_STEPPER_MAXSPEED = (MECANICA_PASOS_POR_VUELTA_MOTOR * 6);	// Velocidad maxima del stepper (pasos por segundo)
+static const float MECANICA_STEPPER_MAXACELERAION = (MECANICA_STEPPER_MAXSPEED / 3);	// Aceleracion maxima del stepper (pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
 static const short MECANICA_RATIO_REDUCTORA = 6;							// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 16;				// Numero de dientes del piños de ataque
 static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 981;	// Numero de dientes de la cremallera de la cupula
@@ -1306,6 +1308,13 @@ void setup() {
 	
 	Serial.println("Sistema Iniciado");
 
+	// Esto estaria guay, pero dispara el Watchdog en la CPU1
+	//portDISABLE_INTERRUPTS();
+
+	// Esto creo que no hace nada
+	portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+	portENTER_CRITICAL(&mux);
+
 }
 
 #pragma endregion
@@ -1315,8 +1324,14 @@ void setup() {
 // Funcion LOOP de Arduino
 void loop() {
 		
+		// Esto si que me suaviza el golpe motor.	
+		portDISABLE_INTERRUPTS();
+
 		// Solo la funcion de la libreria del Stepper que se come un nucleo casi.
 		ControladorStepper.run();
+
+
+		portENABLE_INTERRUPTS();
 	
 }
 
