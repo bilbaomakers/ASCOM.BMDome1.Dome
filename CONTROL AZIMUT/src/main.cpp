@@ -15,7 +15,6 @@ Author:		 Diego Maroto - BilbaoMakers 2019 - info@bilbaomakers.org
 
 Cosas a hacer en el futuro
 
-
 - Implementar uno a varios Led WS2812 para informar del estado de lo importante
 - Implementar calculo de rotacion basado en mi posicion para "predecir" el movimiento del objeto y poder hacer seguimiento auntonomo automatico
 				
@@ -23,6 +22,19 @@ Cosas de configuracion a pasar desde el Driver
 
 		- El Azimut cuando esta en HOME
 		- El Azimut del PARK
+
+
+NOTAS SOBRE EL STEPPER Y LA LIBRERIA ACCELSTEPPER
+
+- El ancho minimo de pulso que puede generar la libreria es 20uS, por tanto el periodo minimo es 40uS - Frecuencia Maxima 25Khz
+- Una velocidad de motor aceptable inicialmente son 50 revoluciones por minuto (50 tiene el motor de puerta corredera actual pero como soy un maniatico me gusta mas 60)
+- Eso es 1 vuelta por segundo en la reductora, que como es 1:6 son 6 revoluciones / segundo del motor
+- A 3200 pulsos por vuelta en la controladora, para 6 rev/segundo son 19200 pulsos por segundo. Es el maximo que puedo exprimir la libreria.
+- Determinaremos la velocidad optima de la cupula "in situ", originalmente probaremos mas lento cuando montemos.
+
+- Para ejecutar el comando "run" de la libreria Accelstepper vamos a usar la interrupcion de un timer.
+- ESP32 tiene 4 timers que funcionan a una frecuencia de 80 MHz (Ole!). Nos sobra "velocidad" que te cagas aqui
+- No tengo ni idea de cuantos ciclos de reloj usa el run() de la libreria (lo investigare a ver)
 
 */
 
@@ -52,9 +64,9 @@ Cosas de configuracion a pasar desde el Driver
 static const uint8_t MECANICA_STEPPER_PULSEPIN = 32;					// Pin de pulsos del stepper
 static const uint8_t MECANICA_STEPPER_DIRPIN = 25;						// Pin de direccion del stepper
 static const uint8_t MECANICA_STEPPER_ENABLEPING = 33;				// Pin de enable del stepper
-static const float MECANICA_STEPPER_MAXSPEED = 4000;					// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXACELERAION = 500;			// Aceleracion maxima del stepper
-static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;		// Numero de pasos por vuelta del STEPPER
+static const float MECANICA_STEPPER_MAXSPEED = 19200;					// Velocidad maxima del stepper (pasos por segundo)
+static const float MECANICA_STEPPER_MAXACELERAION = (MECANICA_STEPPER_MAXSPEED / 3);			// Aceleracion maxima del stepper (pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
+static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 3200;		// Numero de pasos por vuelta del STEPPER (Configuracion del controlador)
 static const short MECANICA_RATIO_REDUCTORA = 6;							// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 16;				// Numero de dientes del piños de ataque
 static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 981;	// Numero de dientes de la cremallera de la cupula
@@ -100,20 +112,14 @@ struct MQTTCFG
 // Para la conexion MQTT
 AsyncMqttClient  ClienteMQTT;
 
-long lastMsg = 0;
-char msg[50];
-int value = 0;
-
 // Controlador Stepper
 AccelStepper ControladorStepper;
 
-// Objetos debouncer para los switches
-Bounce Debouncer_HomeSwitch = Bounce();
 
-// Los manejadores para las tareas
+// Los manejadores para las tareas. El resto de las cosas que hace nuestro controlador que son un poco mas flexibles que la de los pulsos del Stepper
 TaskHandle_t THandleTaskCupulaRun,THandleTaskProcesaComandos,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed,THandleTaskEnviaRespuestas;	
 
-// Manejadores Colas
+// Manejadores Colas para comunicaciones inter-tareas
 QueueHandle_t ColaComandos,ColaRespuestas;
 
 #pragma endregion
@@ -135,6 +141,8 @@ private:
 	bool Inicializando;						// Para saber que estamos ejecutando el comando INITHW
 	bool BuscandoCasa;						// Para saber que estamos ejecutando el comando FINDHOME
 	float TotalPasos;							// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
+	Bounce Debouncer_HomeSwitch = Bounce(); // Objeto debouncer para el switch HOME
+
 		
 	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
 	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
@@ -150,7 +158,7 @@ private:
 
 public:
 
-	BMDomo1();		// Constructor (es la funcion que devuelve un Objeto de esta clase)
+	BMDomo1(uint8_t PinHome);		// Constructor (es la funcion que devuelve un Objeto de esta clase)
 	~BMDomo1() {};	// Destructor (Destruye el objeto, o sea, lo borra de la memoria)
 
 
@@ -181,7 +189,7 @@ public:
 #pragma region IMPLEMENTACIONES BMDomo1
 
 // Constructor. Lo que sea que haya que hacer antes de devolver el objeto de esta clase al creador.
-BMDomo1::BMDomo1() {	
+BMDomo1::BMDomo1(uint8_t PinHome) {	
 
 	HardwareInfo = "BMDome1.HWAz1.0";
 	Inicializando = false;
@@ -192,6 +200,11 @@ BMDomo1::BMDomo1() {
 	BuscandoCasa = false;
 	AtHome = false;
 	TotalPasos = (float)(MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR) / (float)(MECANICA_DIENTES_PINON_ATAQUE);
+	// Inicializacion del sensor de HOMME
+	pinMode(PinHome, INPUT_PULLUP);
+	Debouncer_HomeSwitch.attach(PinHome);
+	Debouncer_HomeSwitch.interval(5);
+
 }
 
 #pragma region Funciones Privadas
@@ -284,7 +297,7 @@ String BMDomo1::MiEstadoJson(int categoria) {
 
 	// devolver el char array con el JSON
 	return JSONmessageBuffer;
-
+	
 }
 
 // Metodos (funciones). TODAS Salvo la RUN() deben ser ASINCRONAS. Jamas se pueden quedar uno esperando. Esperar a lo bobo ESTA PROHIBIDISISISISMO, tenemos MUCHAS cosas que hacer ....
@@ -476,6 +489,9 @@ void BMDomo1::MoveTo(int grados) {
 // Esta funcion se lanza desde el loop. Es la que hace las comprobaciones. No debe atrancarse nunca tampoco (ni esta ni ninguna)
 void BMDomo1::Run() {
 
+	// Actualizar la lectura de los switches
+	Debouncer_HomeSwitch.update();
+
 	// Una importante es actualizar la propiedad Slewing con el estado del motor paso a paso. 
 	Slewing = ControladorStepper.isRunning();
 
@@ -554,7 +570,7 @@ void BMDomo1::Run() {
 
 // Objeto de la clase BMDomo1. Es necesario definirlo aqui debajo de la definicion de clase. No puedo en la region de arriba donde tengo los demas
 // Eso es porque la clase usa objetos de fuera. Esto es chapuza pero de momento asi no me lio. Despues todo por referencia y la clase esta debajo de los includes o en una libreria a parte. Asi esntonces estaria OK.
-BMDomo1 MiCupula;
+BMDomo1 MiCupula(MECANICA_SENSOR_HOME);
 
 
 #pragma endregion
@@ -977,18 +993,19 @@ SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_c
 
 #pragma region TASKS
 
+
 // Tarea para vigilar la conexion con el MQTT y conectar si no estamos conectados
 void TaskGestionRed ( void * parameter ) {
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 2000;
+	const TickType_t xFrequency = 10000;
 	xLastWakeTime = xTaskGetTickCount ();
 
 
 	while(true){
 
 		if (WiFi.isConnected() && !ClienteMQTT.connected()){
-
+			
 			ClienteMQTT.connect();
 			
 		}
@@ -1007,18 +1024,20 @@ void TaskProcesaComandos ( void * parameter ){
 	xLastWakeTime = xTaskGetTickCount ();
 
 	char JSONmessageBuffer[100];
-	DynamicJsonBuffer jsonBuffer;
-	
-	String COMANDO;
-	String PAYLOAD;
 	
 	while (true){
 			
+			// Limpiar el Buffer
+			memset(JSONmessageBuffer, 0, sizeof JSONmessageBuffer);
+
 			if (xQueueReceive(ColaComandos,&JSONmessageBuffer,0) == pdTRUE ){
 
 				//Serial.println("Procesando comando: " + String(JSONmessageBufferRX));
 
-				
+				String COMANDO;
+				String PAYLOAD;
+				DynamicJsonBuffer jsonBuffer;
+
 				JsonObject& ObjJson = jsonBuffer.parseObject(JSONmessageBuffer);
 
 				//json.printTo(Serial);
@@ -1060,7 +1079,8 @@ void TaskProcesaComandos ( void * parameter ){
 
 					else {
 
-						Serial.println("Me ha llegado un comando con demasiados parametros");
+						Serial.print("Me ha llegado un comando con demasiados parametros: ");
+						Serial.println(JSONmessageBuffer);
 
 					}
 
@@ -1070,7 +1090,8 @@ void TaskProcesaComandos ( void * parameter ){
 
 				else {
 
-						Serial.println("Me ha llegado un comando que no puedo Deserializar");
+						Serial.print("Me ha llegado un comando que no puedo Deserializar: ");
+						Serial.println(JSONmessageBuffer);
 
 				}
 
@@ -1084,6 +1105,7 @@ void TaskProcesaComandos ( void * parameter ){
 
 }
 
+// Tarea para procesar la cola de respuestas
 void TaskEnviaRespuestas( void * parameter ){
 
 	TickType_t xLastWakeTime;
@@ -1091,13 +1113,16 @@ void TaskEnviaRespuestas( void * parameter ){
 	xLastWakeTime = xTaskGetTickCount ();
 	
 	char JSONmessageBuffer[300];
-	DynamicJsonBuffer jsonBuffer;
 	
-
 
 	while(true){
 
+		// Limpiar el Buffer
+		memset(JSONmessageBuffer, 0, sizeof JSONmessageBuffer);
+
 		if (xQueueReceive(ColaRespuestas,&JSONmessageBuffer,0) == pdTRUE ){
+
+				DynamicJsonBuffer jsonBuffer;
 
 				JsonObject& ObjJson = jsonBuffer.parseObject(JSONmessageBuffer);
 
@@ -1139,7 +1164,7 @@ void TaskEnviaRespuestas( void * parameter ){
 
 }
 
-// Tarea para "atender" a los mensajes MQTT. Hay que ver tambien cuan rapido podemos ejecutarla
+// Tarea para el metodo run del objeto de la cupula.
 void TaskCupulaRun( void * parameter ){
 
 	TickType_t xLastWakeTime;
@@ -1175,11 +1200,10 @@ void TaskComandosSerieRun( void * parameter ){
 	// Manejador para los comandos Serie no reconocidos.
 	serial_commands_.SetDefaultHandler(&cmd_error);
 
-
 	while(true){
-
+		
 		serial_commands_.ReadSerial();
-
+		
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
 	}
@@ -1217,17 +1241,10 @@ void setup() {
 
 	Serial.println("-- Iniciando Controlador Azimut --");
 
-	// Instanciar el objeto MiCupula. Se inicia el solo (o deberia) con las propiedades en estado guay
-	MiCupula = BMDomo1();
 	// Asignar funciones Callback de Micupula
 	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
 		
-	// Inicializacion de las GPIO
-	pinMode(MECANICA_SENSOR_HOME, INPUT_PULLUP);
-	Debouncer_HomeSwitch.attach(MECANICA_SENSOR_HOME);
-	Debouncer_HomeSwitch.interval(5);
-
-	// Leer la configuracion que hay en el archivo de configuracion config.json
+		// Leer la configuracion que hay en el archivo de configuracion config.json
 	Serial.println("Leyendo fichero de configuracion");
 	LeeConfig();
 	
@@ -1239,7 +1256,8 @@ void setup() {
 	MiConfigMqtt.statTopic = "stat/" + String(MiConfigMqtt.mqtt_topic);
 	MiConfigMqtt.teleTopic = "tele/" + String(MiConfigMqtt.mqtt_topic);
 	MiConfigMqtt.lwtTopic = MiConfigMqtt.teleTopic + "/LWT";
-		
+
+	// Las funciones callback de la libreria MQTT	
 	ClienteMQTT.onConnect(onMqttConnect);
   ClienteMQTT.onDisconnect(onMqttDisconnect);
   ClienteMQTT.onSubscribe(onMqttSubscribe);
@@ -1274,7 +1292,8 @@ void setup() {
 	// TASKS
 	Serial.println("Creando tareas ...");
 	
-	// Tareas CORE0
+
+	// Tareas CORE0 gestinadas por FreeRTOS
 	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
 	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,0);
 	xTaskCreatePinnedToCore(TaskEnviaRespuestas,"EnviaMQTT",2000,NULL,1,&THandleTaskEnviaRespuestas,0);
@@ -1296,9 +1315,9 @@ void setup() {
 // Funcion LOOP de Arduino
 void loop() {
 		
+		// Solo la funcion de la libreria del Stepper que se come un nucleo casi.
 		ControladorStepper.run();
-		Debouncer_HomeSwitch.update();
-
+	
 }
 
 #pragma endregion
