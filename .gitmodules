@@ -1,0 +1,3 @@
+[submodule "CONTROL AZIMUT/lib/CONTROL"]
+	path = CONTROL AZIMUT/lib/CONTROL
+	url = https://github.com/dmarofer/TimerStepper
