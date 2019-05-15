@@ -50,7 +50,6 @@ NOTAS SOBRE EL STEPPER Y LA LIBRERIA ACCELSTEPPER
 #include <WiFi.h>									// Para las comunicaciones WIFI del ESP32
 #include <DNSServer.h>						// La necesita WifiManager para el portal captivo
 #include <WebServer.h>						// La necesita WifiManager para el formulario de configuracion (ESP32)
-//#include <WiFiManager.h>					// Para la gestion avanzada de la wifi
 #include <ArduinoJson.h>					// OJO: Tener instalada una version NO BETA (a dia de hoy la estable es la 5.13.4). Alguna pata han metido en la 6
 #include <string>									// Para el manejo de cadenas
 #include <Bounce2.h>							// Libreria para filtrar rebotes de los Switches: https://github.com/thomasfredericks/Bounce2
@@ -1303,18 +1302,13 @@ void setup() {
 	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
 	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,0);
 	
-	// Tareas CORE1. No lanzo ninguna lo hago en el loop() que es una tarea unica en el CORE1
-	// Lo hago asi porque necesito muchisima velocidad y FreeRTOS solo puede cambiar entre tareas a 1Khz.
+	// Tareas CORE1. 
+
 	
+	// Init Completado.
 	Serial.println("Sistema Iniciado");
 
-	// Esto estaria guay, pero dispara el Watchdog en la CPU1
-	//portDISABLE_INTERRUPTS();
-
-	// Esto creo que no hace nada
-	portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
-	portENTER_CRITICAL(&mux);
-
+	
 }
 
 #pragma endregion
@@ -1324,14 +1318,6 @@ void setup() {
 // Funcion LOOP de Arduino
 void loop() {
 		
-		// Esto si que me suaviza el golpe motor.	
-		portDISABLE_INTERRUPTS();
-
-		// Solo la funcion de la libreria del Stepper que se come un nucleo casi.
-		ControladorStepper.run();
-
-
-		portENABLE_INTERRUPTS();
 	
 }
 
