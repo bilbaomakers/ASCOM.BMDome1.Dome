@@ -292,7 +292,7 @@ String BMDomo1::MiEstadoJson(int categoria) {
 
 
 	// Crear un buffer (aray de 100 char) donde almacenar la cadena de texto del JSON
-	char JSONmessageBuffer[100];
+	char JSONmessageBuffer[200];
 
 	// Tirar al buffer la cadena de objetos serializada en JSON con la propiedad printTo del objeto de arriba
 	jObj.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
