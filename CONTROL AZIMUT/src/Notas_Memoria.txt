@@ -1,0 +1,48 @@
+NIVEL HARDWARE
+
+Memoria interna del procesador
+ROM - 448Kb para boot y core
+SRAM - Static RAM - 520Kb
+8Kb de SRAM en RTC (Copro)
+
+Memoria externa ROM - SPI Flash (Antigua EEPROM)
+W25Q32: 32M-bit / 4M-byte (4,194,304)
+Usada habitualmente como memoria de programa, para OTA y sistema de ficheros SPIFFS, a particionar al gusto aunque para arduino en PlatformIO hay una por defecto.
+
+
+
+NIVEL SOFTWARE
+
+IROM - Instrucciones en ROM(flash) - Por defecto todas las funciones se almacenan ahi (no necesario modificador en programacion)
+DROM - Datos en ROM(flash) - Por defecto todas las constantes se almacenan en la flash (no modificador solo declarar como constante)
+D/IRAM - Combinada de las 2 pero no he conseguido saber como definirla.
+
+IRAM_ATTR - Instruction RAM - Instrucciones (funciones) a la RAM (ISR) - void IRAM_ATTR onTimer_stepper(){}
+DRAM_ATTR - Data RAM - Datos que se van a manejar desde instrucciones en la IRAM - 
+
+NOTA: Las variables (datos no constantes iniciados en el codigo) se almacenan en la RAM, en los espacios HEAP, STACK o STATICS(volatile). No confundir con la DRAM (espacio para datos de funciones IRAM)
+
+__NOINIT_ATTR - Datos en la Flash que NO se inicializan en restart (permanencen tras rebote).
+
+RTC_NOINIT_ATTR - Datos en la RTC Slow memory (unica memoria accesible por el coprocesador que hay que usar el depp sleep, y accesible despues por los procesadores normales)
+
+DMA_ATTR - Para alojamiento de datos en RAM que utilizan los perifericos DMA (Direct Access Memory). No es obligatorio (se puede poner en el STACK) porque es RAM, pero es mas seguro si hay RAM externa
+
+Tambien hay opcion de RAM externa que no tratamos aqui.
+
+
+Vista desde el "Scope":
+Heap - El computo global de la RAM accesible (en cada tipo, normal, rtc, ...). Es un espacio digamos "dinamico" en funcion de "otros usos" de la RAM.
+Stack - Espacio de memoria RAM para cada "Thread". Obviamente no accesible mas que por ese thread. Puede estar localizada a su vez en la RAM normal, en la RTC .....
+Estatica - Localizada en HEAP e INAMOVIBLE por el compilador maligno (reservada)
+
+xPortGetFreeHeapSize() - Heap libre (en bytes)
+
+
+Proceso de arranque:
+
+- First Boot Stage - La CPU0 (CPU_PRO) inicializa el HW y va a su vector 0 (0x40000400)
+- Se inicia el second Stage del arranque donde se comprueba las particiones y el contenido de la particion OTA para decidir si cargar ese programa o el "normal"
+- Se traslada lo que haya que trasladar de la FLASH a las RAMs y se mapea donde esta todo (De los mapeos se encarga la MMU (Memory Management Unit) que esta entre los procesadores y las memorias)
+- En este second stage la CPU1 (APP_CPU) esta parada (logico) y la CPU0 usa su memoria de prestadillo para sus operaciones
+- Se salta al vector de inicio de la aplicacion(call_start_cpu0 en ESP_IDF) y se libera la memoria de la CPU_APP la cual sera iniciada por programa nosotros. Hasta aqui el proceso ESP_IDF. Arduino añade mas para el tema setup() loop() ya que inicia el programa "a su forma".
