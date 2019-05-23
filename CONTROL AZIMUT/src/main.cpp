@@ -66,7 +66,7 @@ static const uint8_t MECANICA_STEPPER_PULSEPIN = 32;					// Pin de pulsos del st
 static const uint8_t MECANICA_STEPPER_DIRPIN = 25;						// Pin de direccion del stepper
 static const uint8_t MECANICA_STEPPER_ENABLEPING = 33;				// Pin de enable del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;		// Numero de pasos por vuelta del STEPPER (Configuracion del controlador)
-static const float MECANICA_STEPPER_MAXSPEED = (MECANICA_PASOS_POR_VUELTA_MOTOR * 6);	// Velocidad maxima del stepper (pasos por segundo)
+static const float MECANICA_STEPPER_MAXSPEED = (MECANICA_PASOS_POR_VUELTA_MOTOR * 10);	// Velocidad maxima del stepper (pasos por segundo)
 static const float MECANICA_STEPPER_MAXACELERAION = (MECANICA_STEPPER_MAXSPEED / 3);	// Aceleracion maxima del stepper (pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
 static const short MECANICA_RATIO_REDUCTORA = 6;							// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 16;				// Numero de dientes del piños de ataque
@@ -1356,7 +1356,7 @@ void setup() {
 
 	timer_stp = timerBegin(0, 80, true);
   timerAttachInterrupt(timer_stp, &timer_stp_isr, true);
-  timerAlarmWrite(timer_stp, 10, true);
+  timerAlarmWrite(timer_stp, 20, true);
   timerAlarmEnable(timer_stp);
 
 	
