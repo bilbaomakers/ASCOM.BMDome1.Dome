@@ -123,6 +123,13 @@ TaskHandle_t THandleTaskCupulaRun,THandleTaskProcesaComandos,THandleTaskComandos
 // Manejadores Colas para comunicaciones inter-tareas
 QueueHandle_t ColaComandos,ColaRespuestas;
 
+
+// Timer Stepper Run
+
+hw_timer_t * timer_stp = NULL;
+portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+
+
 #pragma endregion
 
 #pragma region CLASE BMDomo1 - Clase principial para el objeto que representa la cupula, sus estados, propiedades y acciones
@@ -1229,6 +1236,46 @@ void TaskMandaTelemetria( void * parameter ){
 	
 }
 
+// ISR del timer_stp
+
+uint32_t cp0_regs[18];
+
+void IRAM_ATTR timer_stp_isr() {
+
+	portENTER_CRITICAL(&timerMux);
+
+	 // get FPU state
+  uint32_t cp_state = xthal_get_cpenable();
+  
+  if(cp_state) {
+    // Save FPU registers
+    xthal_save_cp0(cp0_regs);
+  } 
+	
+	else {
+    // enable FPU
+    xthal_set_cpenable(1);
+  }
+	
+  
+	ControladorStepper.run();
+	
+
+ 	if(cp_state) {
+    // Restore FPU registers
+    xthal_restore_cp0(cp0_regs);
+  } 
+	
+	else {
+    // turn it back off
+    xthal_set_cpenable(0);
+  }
+
+	portEXIT_CRITICAL(&timerMux);
+
+}
+
+
 #pragma endregion
 
 #pragma region Funcion Setup() de ARDUINO
@@ -1304,6 +1351,14 @@ void setup() {
 	
 	// Tareas CORE1. 
 
+
+	// Timers
+
+	timer_stp = timerBegin(0, 80, true);
+  timerAttachInterrupt(timer_stp, &timer_stp_isr, true);
+  timerAlarmWrite(timer_stp, 10, true);
+  timerAlarmEnable(timer_stp);
+
 	
 	// Init Completado.
 	Serial.println("Sistema Iniciado");
@@ -1318,6 +1373,7 @@ void setup() {
 // Funcion LOOP de Arduino
 void loop() {
 		
+		//ControladorStepper.run();
 	
 }
 
