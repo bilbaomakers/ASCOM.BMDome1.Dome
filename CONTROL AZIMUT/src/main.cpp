@@ -1222,7 +1222,7 @@ void TaskComandosSerieRun( void * parameter ){
 void TaskMandaTelemetria( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 2000;
+	const TickType_t xFrequency = 1000;
 	xLastWakeTime = xTaskGetTickCount ();
 	
 
