@@ -26,7 +26,9 @@ long DRAM_ATTR _n;
 float DRAM_ATTR _c0;
 float DRAM_ATTR _cn;
 float DRAM_ATTR _cmin; // at max speed
-
+unsigned long DRAM_ATTR _maxexectime;
+unsigned long DRAM_ATTR _texectimestart;
+unsigned long DRAM_ATTR _texectimestop;
 
 #if 0
 // Some debugging assistance
@@ -205,9 +207,22 @@ void IRAM_ATTR AccelStepper::computeNewSpeed()
 // returns true if the motor is still running to the target position.
 boolean IRAM_ATTR AccelStepper::run()
 {
+    _texectimestart = micros();
+
     if (runSpeed())
 	computeNewSpeed();
+   
+
+    _texectimestop =  micros();
+
+    if ((_texectimestop - _texectimestart) > _maxexectime) { 
+    
+        _maxexectime = (_texectimestop - _texectimestart);
+    
+    }
+
     return _speed != 0.0 || distanceToGo() != 0;
+
 }
 
 IRAM_ATTR AccelStepper::AccelStepper(uint8_t interface, uint8_t pin1, uint8_t pin2, uint8_t pin3, uint8_t pin4, bool enable)
@@ -228,6 +243,9 @@ IRAM_ATTR AccelStepper::AccelStepper(uint8_t interface, uint8_t pin1, uint8_t pi
     _pin[2] = pin3;
     _pin[3] = pin4;
     _enableInverted = false;
+    _maxexectime = 0;
+    _texectimestart = 0;
+    _texectimestop = 0;
     
     // NEW
     _n = 0;
@@ -264,6 +282,10 @@ IRAM_ATTR AccelStepper::AccelStepper(void (*forward)(), void (*backward)())
     _pin[3] = 0;
     _forward = forward;
     _backward = backward;
+    _maxexectime = 0;
+    _texectimestart = 0;
+    _texectimestop = 0;
+    
 
     // NEW
     _n = 0;
@@ -672,4 +694,11 @@ void IRAM_ATTR AccelStepper::stop()
 bool IRAM_ATTR AccelStepper::isRunning()
 {
     return !(_speed == 0.0 && _targetPos == _currentPos);
+}
+
+
+long IRAM_ATTR AccelStepper::maxexectime(){
+
+    return _maxexectime;
+
 }

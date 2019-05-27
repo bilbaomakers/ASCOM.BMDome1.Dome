@@ -66,13 +66,13 @@ static const uint8_t MECANICA_STEPPER_PULSEPIN = 32;					// Pin de pulsos del st
 static const uint8_t MECANICA_STEPPER_DIRPIN = 25;						// Pin de direccion del stepper
 static const uint8_t MECANICA_STEPPER_ENABLEPING = 33;				// Pin de enable del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;		// Numero de pasos por vuelta del STEPPER (Configuracion del controlador)
-static const float MECANICA_STEPPER_MAXSPEED = (MECANICA_PASOS_POR_VUELTA_MOTOR * 10);	// Velocidad maxima del stepper (pasos por segundo)
+static const float MECANICA_STEPPER_MAXSPEED = (MECANICA_PASOS_POR_VUELTA_MOTOR * 5);	// Velocidad maxima del stepper (pasos por segundo)
 static const float MECANICA_STEPPER_MAXACELERAION = (MECANICA_STEPPER_MAXSPEED / 3);	// Aceleracion maxima del stepper (pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
 static const short MECANICA_RATIO_REDUCTORA = 6;							// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 16;				// Numero de dientes del piños de ataque
 static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 981;	// Numero de dientes de la cremallera de la cupula
 static const boolean MECANICA_STEPPER_INVERTPINS = false;			// Invertir la logica de los pines de control (pulso 1 o pulso 0)
-static const int MECANICA_STEPPER_ANCHO_PULSO = 20;						// Ancho de los pulsos
+static const int MECANICA_STEPPER_ANCHO_PULSO = 10;						// Ancho de los pulsos
 
 // Otros sensores
 static const uint8_t MECANICA_SENSOR_HOME = 26;								// Pin para el sensor de HOME
@@ -261,7 +261,7 @@ void BMDomo1::SetRespondeComandoCallback(RespondeComandoCallback ref) {
 String BMDomo1::MiEstadoJson(int categoria) {
 
 	// Esto crea un objeto de tipo JsonObject para el "contenedor de objetos a serializar". De tamaño Objetos + 1
-	const int capacity = JSON_OBJECT_SIZE(8);
+	const int capacity = JSON_OBJECT_SIZE(9);
 	StaticJsonBuffer<capacity> jBuffer;
 	//DynamicJsonBuffer jBuffer;
 	JsonObject& jObj = jBuffer.createObject();
@@ -280,6 +280,7 @@ String BMDomo1::MiEstadoJson(int categoria) {
 		jObj.set("AZ", GetCurrentAzimut());											// Posicion Actual (de momento en STEPS)
 		jObj.set("POS", ControladorStepper.currentPosition());  // Posicion en pasos del objeto del Stepper
 		jObj.set("TOT", TotalPasos);														// Numero total de pasos por giro de la cupula
+		jObj.set("MAXT", ControladorStepper.maxexectime());		  // Numero total de pasos por giro de la cupula
 
 		break;
 
@@ -317,7 +318,7 @@ void BMDomo1::IniciaCupula(String parametros) {
 		HardwareOK = true;
 		MiRespondeComandos("INITHW", "READY");
 		ControladorStepper.enableOutputs();
-
+		
 	}
 
 	else {
@@ -1006,7 +1007,7 @@ SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_c
 void TaskGestionRed ( void * parameter ) {
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 10000;
+	const TickType_t xFrequency = 4000;
 	xLastWakeTime = xTaskGetTickCount ();
 
 
@@ -1356,7 +1357,7 @@ void setup() {
 
 	timer_stp = timerBegin(0, 80, true);
   timerAttachInterrupt(timer_stp, &timer_stp_isr, true);
-  timerAlarmWrite(timer_stp, 20, true);
+  timerAlarmWrite(timer_stp, 150, true);
   timerAlarmEnable(timer_stp);
 
 	

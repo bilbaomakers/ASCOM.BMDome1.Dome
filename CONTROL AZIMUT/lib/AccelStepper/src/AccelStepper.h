@@ -514,6 +514,8 @@ public:
     /// \return true if the speed is not zero or not at the target position
     bool    isRunning();
 
+    long maxexectime();
+    
 protected:
 
     /// \brief Direction indicator
@@ -671,6 +673,9 @@ private:
     /// Min step size in microseconds based on maxSpeed
     float _cmin; // at max speed
 
+    unsigned long _maxexectime;
+    unsigned long _texectimestart;
+    unsigned long _texectimestop;
 };
 
 /// @example Random.pde
