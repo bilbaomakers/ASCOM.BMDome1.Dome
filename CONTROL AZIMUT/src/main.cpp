@@ -187,7 +187,9 @@ public:
 	long GetCurrentAzimut();									    // Devuelve el azimut actual de la cupula
 	void Run();														// Actualiza las propiedades de estado de este objeto en funcion del estado de motores y sensores
 	void SetRespondeComandoCallback(RespondeComandoCallback ref);	// Definir la funcion para pasarnos la funcion de callback del enviamensajes
-		
+	void Connected();					// Para implementar la propiedad-metodo Connected
+	void Connected(boolean status);					// Para implementar la propiedad-metodo Connected
+
 };
 
 #pragma endregion
@@ -337,7 +339,6 @@ void BMDomo1::IniciaCupula(String parametros) {
 	}
 
 	
-	
 }
 
 // Funcion que da orden de mover la cupula para esperar HOME.
@@ -430,13 +431,15 @@ void BMDomo1::MoveTo(int grados) {
 	// Si la cupula no esta inicializada no hacemos nada mas que avisar
 	if (!HardwareOK && !Inicializando) {
 
-		MiRespondeComandos("GOTO", "HW_NOT_INIT");
+		// Error Hardware Not Init
+		MiRespondeComandos("SlewToAZimut", "ERR_HNI");
 		
 	}
 
 	else if (Slewing) {
 
-		MiRespondeComandos("GOTO", "SLEWING");
+
+		MiRespondeComandos("SlewToAZimut", "ERR_SLW");
 
 	}
 
@@ -474,7 +477,7 @@ void BMDomo1::MoveTo(int grados) {
 				
 			}
 			
-			MiRespondeComandos("GOTO", "OK_MOVE_TO: " + String(grados) + " REAL: " + String(amover));
+			MiRespondeComandos("SlewToAZimut", "OK");
 			
 			ControladorStepper.move(GradosToPasos(amover));
 				
@@ -484,13 +487,31 @@ void BMDomo1::MoveTo(int grados) {
 
 		else {
 			
-			MiRespondeComandos("GOTO", "OUT_OF_RANGE");
+			MiRespondeComandos("SlewToAZimut", "ERR_OR");
 
 		}
 		
 
 	}
 	
+
+}
+
+void BMDomo1::Connected(){
+
+	MiRespondeComandos("Connected", DriverOK?"TRUE":"FALSE");
+
+}
+
+void BMDomo1::Connected(boolean status){
+
+	if (status != DriverOK){
+
+		DriverOK = status;
+
+	}
+
+			MiRespondeComandos("Connected", DriverOK?"TRUE":"FALSE");
 
 }
 
@@ -1055,11 +1076,43 @@ void TaskProcesaComandos ( void * parameter ){
 					COMANDO = ObjJson["COMANDO"].as<String>();
 					PAYLOAD = ObjJson["PAYLOAD"].as<String>();
 					
-
+					// Aqui si me ha llegado un comando con un parametro
 					if (PAYLOAD.indexOf(" ") >> 0) {
 					
-						// COMANDO GOTO
-						if (COMANDO == "GOTO") {
+						// ##### IMPLEMENTACION DE ASCOM
+						// Propiedad (digamos metodo) Connected
+						if (COMANDO == "Connected") {
+
+							// Ascom Connected
+							// Me vendra un true o false o nada??
+
+							
+
+							if (PAYLOAD == "TRUE"){
+
+								MiCupula.Connected(true);
+
+							}
+							
+							else if (PAYLOAD == "FALSE"){
+
+								MiCupula.Connected(false);
+
+							}
+
+							else if (PAYLOAD == "STATUS"){
+
+								MiCupula.Connected();
+
+							}
+
+						}
+
+						// Metodo SlewToAZimut(double)
+						// InvalidValueException Si el valor esta fuera de rango
+						// MethodNotImplementedException Si el Domo no admite el metodo (no tiene sentido aqui)
+						// Raises an error if Slaved is True, if not supported, if a communications failure occurs, or if the dome can not reach indicated azimuth
+						else if (COMANDO == "SlewToAZimut") {
 
 							// Mover la cupula
 							// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round().
@@ -1083,6 +1136,9 @@ void TaskProcesaComandos ( void * parameter ){
 
 						}
 						
+						// ##### COMANDOS FUERA DE ASCOM
+
+
 					}
 
 					else {
