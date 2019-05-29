@@ -149,7 +149,7 @@ private:
 	bool BuscandoCasa;						// Para saber que estamos ejecutando el comando FINDHOME
 	float TotalPasos;							// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
 	Bounce Debouncer_HomeSwitch = Bounce(); // Objeto debouncer para el switch HOME
-
+	int ParkPos;									// Para almacenar la posicion de Park en la clase
 		
 	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
 	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
@@ -189,6 +189,8 @@ public:
 	void SetRespondeComandoCallback(RespondeComandoCallback ref);	// Definir la funcion para pasarnos la funcion de callback del enviamensajes
 	void Connected();					// Para implementar la propiedad-metodo Connected
 	void Connected(boolean status);					// Para implementar la propiedad-metodo Connected
+	void AbortSlew();
+	void SetPark(int l_ParkPos);
 
 };
 
@@ -213,6 +215,7 @@ BMDomo1::BMDomo1(uint8_t PinHome) {
 	pinMode(PinHome, INPUT_PULLUP);
 	Debouncer_HomeSwitch.attach(PinHome);
 	Debouncer_HomeSwitch.interval(5);
+	ParkPos = 0;
 
 }
 
@@ -262,7 +265,7 @@ void BMDomo1::SetRespondeComandoCallback(RespondeComandoCallback ref) {
 String BMDomo1::MiEstadoJson(int categoria) {
 
 	// Esto crea un objeto de tipo JsonObject para el "contenedor de objetos a serializar". De tamaño Objetos + 1
-	const int capacity = JSON_OBJECT_SIZE(9);
+	const int capacity = JSON_OBJECT_SIZE(10);
 	StaticJsonBuffer<capacity> jBuffer;
 	//DynamicJsonBuffer jBuffer;
 	JsonObject& jObj = jBuffer.createObject();
@@ -279,6 +282,7 @@ String BMDomo1::MiEstadoJson(int categoria) {
 		jObj.set("DS", DriverOK);																// Info de la comunicacion con el DRIVER ASCOM (o quiza la cambiemos para comunicacion con "cualquier" driver, incluido uno nuestro
 		jObj.set("HS", HardwareOK);															// Info del estado de inicializacion de la mecanica
 		jObj.set("AZ", GetCurrentAzimut());											// Posicion Actual (de momento en STEPS)
+		jObj.set("PRK", ParkPos);																// Posicion almacenada de Park
 		jObj.set("POS", ControladorStepper.currentPosition());  // Posicion en pasos del objeto del Stepper
 		jObj.set("TOT", TotalPasos);														// Numero total de pasos por giro de la cupula
 		jObj.set("MAXT", ControladorStepper.maxexectime());		  // Numero total de pasos por giro de la cupula
@@ -317,12 +321,12 @@ void BMDomo1::IniciaCupula(String parametros) {
 	if (parametros == "FORCE") {
 
 		HardwareOK = true;
-		MiRespondeComandos("INITHW", "READY");
+		MiRespondeComandos("InitHW", "READY");
 		ControladorStepper.enableOutputs();
 		
 	}
 
-	else {
+	else if (parametros == "STD"){
 
 
 		Inicializando = true;
@@ -348,7 +352,7 @@ void BMDomo1::FindHome() {
 	// Si la cupula no esta inicializada no hacemos nada mas que avisar
 	if (!HardwareOK && !Inicializando) {
 
-		MiRespondeComandos("FINDHOME", "HW_NOT_INIT");
+		MiRespondeComandos("FindHome", "ERR_HNI");
 		
 	}
 	
@@ -359,8 +363,8 @@ void BMDomo1::FindHome() {
 		if (!Slewing && AtHome) {
 
 			// Caramba ya estamos en Home y Parados No tenemos que hacer nada
-			MiRespondeComandos("FINDHOME", "ATHOME");
-		
+			MiRespondeComandos("FindHome", "ATHOME");
+			return;
 
 		}
 
@@ -369,18 +373,19 @@ void BMDomo1::FindHome() {
 
 		
 			// Que nos estamos moviendo leñe no atosigues .....
-			MiRespondeComandos("FINDHOME", "SLEWING");
+			MiRespondeComandos("FindHome", "ERR_SLW");
+			return;
 
 		}
 	
 		// Y si estamos parados y NO en Home .....
 		else if (!Slewing && !AtHome){
 
-			MiRespondeComandos("FINDHOME", "OK");
+			MiRespondeComandos("FindHome", "CMD_OK");
 
 			// Pues aqui si que hay que movernos hasta que encontremos casa y pararnos.
-			// Aqui nos movemos (de momento a lo burro a dar una vuelta entera)
-			MoveTo(359);
+			// Aqui nos movemos (de momento a lo burro a dar media vuelta entera)
+			MoveTo(0);
 
 			// Pero tenemos que salir de la funcion esta no podemos estar esperando a que de la vuelta asi que activo el flag para saber que "estoy buscando home" y termino
 			BuscandoCasa = true;
@@ -477,7 +482,7 @@ void BMDomo1::MoveTo(int grados) {
 				
 			}
 			
-			MiRespondeComandos("SlewToAZimut", "OK");
+			MiRespondeComandos("SlewToAZimut", "CMD_OK");
 			
 			ControladorStepper.move(GradosToPasos(amover));
 				
@@ -515,6 +520,54 @@ void BMDomo1::Connected(boolean status){
 
 }
 
+void BMDomo1::AbortSlew(){
+
+	// Implementar despues la parte del Shutter tambien.
+
+	MiRespondeComandos("AbortSlew", "CMD_OK");
+
+	// Parar Stepper de Azimut (se para con aceleracion no a lo burro)
+	ControladorStepper.stop();
+
+	// Esperar 5 segundos a que se pare el tema y si no error
+	int TiempoEspera;
+	for (TiempoEspera = 0; TiempoEspera < 5; TiempoEspera++){
+
+		if (ControladorStepper.isRunning() == false){
+
+			MiRespondeComandos("AbortSlew", "STOPPED");
+			return;
+
+		}
+
+		// Esto, que es KAKA, aqui no importa, que la Task Procesacomandos se espere que esto es importante
+		delay(1000);
+
+	}
+
+	MiRespondeComandos("AbortSlew", "ERR");
+		
+}
+
+
+void BMDomo1::SetPark(int l_ParkPos){
+
+	if (l_ParkPos >= 0 && l_ParkPos <360){
+
+		ParkPos = l_ParkPos;
+		MiRespondeComandos("SetPark", "SET_OK");
+
+	}
+
+	else {
+
+		MiRespondeComandos("SetPark", "ERR_OR");
+
+	}
+
+}
+
+
 // Esta funcion se lanza desde el loop. Es la que hace las comprobaciones. No debe atrancarse nunca tampoco (ni esta ni ninguna)
 void BMDomo1::Run() {
 
@@ -544,12 +597,12 @@ void BMDomo1::Run() {
 
 
 				BuscandoCasa = false;							// Cambiar el flag interno para saber que "ya no estamos buscando casa, ya hemos llegado"
-				MiRespondeComandos("FINDHOME", "ATHOME");		// Responder al comando FINDHOME
+				MiRespondeComandos("FindHome", "ATHOME");		// Responder al comando FINDHOME
 
 				if (Inicializando) {							// Si ademas estabamos haciendo esto desde el comando INITHW ....
 
 					Inicializando = false;						// Cambiar la variable interna para saber que "ya no estamos inicializando, ya hemos terminado"
-					MiRespondeComandos("INITHW", "READY");	// Responder al comando INITHW
+					MiRespondeComandos("InitHW", "READY");	// Responder al comando INITHW
 
 				}
 
@@ -583,7 +636,7 @@ void BMDomo1::Run() {
 	// Un supuesto raro, pero eso es que no hemos conseguido detectar el switch home
 	if (!Slewing && BuscandoCasa) {
 
-		MiRespondeComandos("FINDHOME", "FAILED_HOME_SW_ERROR");
+		MiRespondeComandos("FindHome", "ERR_HSF");
 		BuscandoCasa = false;
 		Inicializando = false;
 				
@@ -1071,84 +1124,95 @@ void TaskProcesaComandos ( void * parameter ){
 
 				//json.printTo(Serial);
 				if (ObjJson.success()) {
-					
-
+				
 					COMANDO = ObjJson["COMANDO"].as<String>();
 					PAYLOAD = ObjJson["PAYLOAD"].as<String>();
 					
-					// Aqui si me ha llegado un comando con un parametro
-					if (PAYLOAD.indexOf(" ") >> 0) {
-					
-						// ##### IMPLEMENTACION DE ASCOM
-						// Propiedad (digamos metodo) Connected
-						if (COMANDO == "Connected") {
+					// ##### IMPLEMENTACION DE ASCOM
+					// Propiedad (digamos metodo) Connected
+					if (COMANDO == "Connected") {
 
-							// Ascom Connected
-							// Me vendra un true o false o nada??
+						// Ascom Connected
+						// Me vendra un true o false o nada??
+						
 
-							
+						if (PAYLOAD == "TRUE"){
 
-							if (PAYLOAD == "TRUE"){
-
-								MiCupula.Connected(true);
-
-							}
-							
-							else if (PAYLOAD == "FALSE"){
-
-								MiCupula.Connected(false);
-
-							}
-
-							else if (PAYLOAD == "STATUS"){
-
-								MiCupula.Connected();
-
-							}
+							MiCupula.Connected(true);
 
 						}
+							
+						else if (PAYLOAD == "FALSE"){
+
+							MiCupula.Connected(false);
+
+						}
+
+						else if (PAYLOAD == "STATUS"){
+
+							MiCupula.Connected();
+
+						}
+
+					}
 
 						// Metodo SlewToAZimut(double)
 						// InvalidValueException Si el valor esta fuera de rango
 						// MethodNotImplementedException Si el Domo no admite el metodo (no tiene sentido aqui)
 						// Raises an error if Slaved is True, if not supported, if a communications failure occurs, or if the dome can not reach indicated azimuth
-						else if (COMANDO == "SlewToAZimut") {
+					else if (COMANDO == "SlewToAZimut") {
 
-							// Mover la cupula
-							// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round().
-							MiCupula.MoveTo(round(PAYLOAD.toFloat()));
+						// Mover la cupula
+						// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round().
+						MiCupula.MoveTo(round(PAYLOAD.toFloat()));
 
-						}
+					}
 
-						// COMANDO STATUS
-						else if (COMANDO == "FINDHOME") {
+					// Metodo AbortSlew
+					// Calling this method will immediately disable hardware slewing (Slaved will become False). Raises an error if a communications failure occurs, or if the command is known to have failed. 
+					else if (COMANDO == "AbortSlew"){
+
+						// Esto para la ejecucion unos 5 segundos maximo (si no tenemos seguridad de que todo esta parado) pero como estamos en una TASK para procesar los comandos
+						// no solo no importa sino que esta bien que no se procesen mas hasta que haya una respuesta de este
+						// comando ya que es muy importante.
+						MiCupula.AbortSlew();
+
+					}
+
+					// Metodo FindHome
+					// After Home position is established initializes Azimuth to the default value and sets the AtHome flag. Exception if not supported or communications failure. Raises an error if Slaved is True
+					else if (COMANDO == "FindHome") {
 
 							
-							MiCupula.FindHome();
-
-
-						}
-
-						// COMANDO STATUS
-						else if (COMANDO == "INITHW") {
-
-							MiCupula.IniciaCupula(PAYLOAD);
-
-						}
-						
-						// ##### COMANDOS FUERA DE ASCOM
+						MiCupula.FindHome();
 
 
 					}
+					
+					else if (COMANDO == "SetPark"){
+
+						MiCupula.SetPark(PAYLOAD.toInt());
+
+					}
+
+						
+					// ##### COMANDOS FUERA DE ASCOM
+					else if (COMANDO == "InitHW") {
+
+						MiCupula.IniciaCupula(PAYLOAD);
+
+					}
+
+
+
+					// Y Ya si no es de ninguno de estos grupos ....
 
 					else {
 
-						Serial.print("Me ha llegado un comando con demasiados parametros: ");
+						Serial.print("Me ha llegado un comando que no entiendo: ");
 						Serial.println(JSONmessageBuffer);
 
 					}
-
-				
 
 				}
 
@@ -1158,9 +1222,7 @@ void TaskProcesaComandos ( void * parameter ){
 						Serial.println(JSONmessageBuffer);
 
 				}
-
-				
-
+			
 			}
 		
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
@@ -1196,12 +1258,10 @@ void TaskEnviaRespuestas( void * parameter ){
 					String CMND = ObjJson["CMND"].as<String>();
 					String MQTTT = ObjJson["MQTTT"].as<String>();
 					String RESP = ObjJson["RESP"].as<String>();
-					String resp_topic = MiConfigMqtt.teleTopic + "/RESPONSE";
-
+					
 					if (TIPO == "BOTH"){
 
 						ClienteMQTT.publish(MQTTT.c_str(), 2, false, RESP.c_str());
-						if (CMND != "TELE") {ClienteMQTT.publish(resp_topic.c_str(), 2, false, RESP.c_str());}
 						Serial.println(CMND + " " + RESP);
 						
 					}
@@ -1209,8 +1269,7 @@ void TaskEnviaRespuestas( void * parameter ){
 					else 	if (TIPO == "MQTT"){
 
 						ClienteMQTT.publish(MQTTT.c_str(), 2, false, RESP.c_str());
-						if (CMND != "TELE") {ClienteMQTT.publish(resp_topic.c_str(), 2, false, RESP.c_str());}
-																		
+																								
 					}
 					
 					else 	if (TIPO == "SERIE"){
