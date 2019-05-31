@@ -42,7 +42,6 @@ NOTAS SOBRE EL STEPPER Y LA LIBRERIA ACCELSTEPPER
 #pragma region INCLUDES
 // Librerias comantadas en proceso de sustitucion por la WiFiMQTTManager
 
-#include <SerialCommands.h>				// Libreria para la gestion de comandos por el puerto serie https://github.com/ppedro74/Arduino-SerialCommands
 #include <AsyncMqttClient.h>			// Vamos a probar esta que es Asincrona: https://github.com/marvinroger/async-mqtt-client
 #include <AccelStepper.h>					// Para controlar el stepper como se merece: https://www.airspayce.com/mikem/arduino/AccelStepper/classAccelStepper.html
 #include <FS.h>										// Libreria Sistema de Ficheros
@@ -82,31 +81,6 @@ unsigned long TIEMPO_TICKER_RAPIDO = 500;
 
 #pragma endregion
 
-#pragma region Variables y estructuras
-
-// Estructura para las configuraciones MQTT
-struct MQTTCFG
-{
-
-	//Valores c_str para conexion al broker MQTT. Si existen posterioirmente en el fichero de configuracion en el SPIFFS se sobreescibiran con esos valores.
-	char mqtt_server[40] = "";
-	char mqtt_port[6] = "";
-	char mqtt_topic[33] = "";
-	char mqtt_usuario[19] = "";
-	char mqtt_password[19] = "";
-
-	// Variables internas string para los nombres de los topics. Se les da valor luego al final del setup()
-	// El de comandos al que me voy a suscribir para "escuchar".
-	String cmndTopic;
-	String statTopic;
-	String teleTopic;
-	String lwtTopic;
-
-} MiConfigMqtt;
-
-
-#pragma endregion
-
 #pragma region Objetos
 
 // Para la conexion MQTT
@@ -114,7 +88,6 @@ AsyncMqttClient  ClienteMQTT;
 
 // Controlador Stepper
 AccelStepper ControladorStepper;
-
 
 // Los manejadores para las tareas. El resto de las cosas que hace nuestro controlador que son un poco mas flexibles que la de los pulsos del Stepper
 TaskHandle_t THandleTaskCupulaRun,THandleTaskProcesaComandos,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed,THandleTaskEnviaRespuestas;	
@@ -131,6 +104,162 @@ portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 #pragma endregion
 
+#pragma region CLASE ConfigClass
+
+class ConfigClass{
+
+	private:
+
+		String c_fichero;
+
+	public:
+	
+		char mqttserver[40];
+		char mqttport[6];
+		char mqtttopic[33];
+		char mqttusuario[19];
+		char mqttpassword[19];
+
+		String cmndTopic;
+		String statTopic;
+		String teleTopic;
+		String lwtTopic;
+
+
+		ConfigClass(String fichero);
+		~ConfigClass() {};
+
+		boolean leeconfig ();
+		boolean escribeconfig ();
+		
+};
+
+	// Constructor
+	ConfigClass::ConfigClass(String fichero){
+
+		c_fichero = fichero;
+
+		//leeconfig();
+
+		mqttserver[0]= '\0';
+		mqttport[0] = '\0';
+		mqtttopic[0] = '\0';
+		mqttusuario[0] = '\0';
+		mqttpassword[0] = '\0';
+		
+	}
+
+	// Seer la configuracion desde el fichero
+	boolean ConfigClass::leeconfig(){
+
+		if (SPIFFS.begin(true)) {
+			Serial.println("Sistema de ficheros montado");
+			if (SPIFFS.exists(c_fichero)) {
+				// Si existe el fichero abrir y leer la configuracion y asignarsela a las variables definidas arriba
+				Serial.println("Leyendo configuracion del fichero");
+				File configFile = SPIFFS.open(c_fichero, "r");
+				if (configFile) {
+					Serial.println("Fichero de configuracion encontrado");
+					size_t size = configFile.size();
+					// Declarar un buffer para almacenar el contenido del fichero
+					std::unique_ptr<char[]> buf(new char[size]);
+					// Leer el fichero al buffer
+					configFile.readBytes(buf.get(), size);
+					DynamicJsonBuffer jsonBuffer;
+					JsonObject& json = jsonBuffer.parseObject(buf.get());
+					//json.printTo(Serial);
+					if (json.success()) {
+						Serial.println("Configuracion del fichero leida");
+
+						// Leer los valores del MQTT
+						strcpy(mqttserver, json["mqttserver"]);
+						strcpy(mqttport, json["mqttport"]);
+						strcpy(mqtttopic, json["mqtttopic"]);
+						strcpy(mqttusuario, json["mqttusuario"]);
+						strcpy(mqttpassword, json["mqttpassword"]);
+
+						// Dar valor a las strings con los nombres de la estructura de los topics
+						cmndTopic = "cmnd/" + String(mqtttopic) + "/#";
+						statTopic = "stat/" + String(mqtttopic);
+						teleTopic = "tele/" + String(mqtttopic);
+						lwtTopic = teleTopic + "/LWT";
+						return true;
+
+						Serial.println("Servidor MQTT: " + String(mqttserver)) + ":" + String(mqttport);
+						Serial.println("Topic Comandos: " + cmndTopic);
+						Serial.println("Topic Respuestas: " + statTopic);
+						Serial.println("Topic Telemetria: " + teleTopic);
+						Serial.println("Topic LWT: " + lwtTopic);
+						
+					}
+					
+					else {
+
+						Serial.println("No se puede cargar la configuracion desde el fichero");
+						return false;
+
+					}
+				}
+
+				else {
+
+					Serial.println ("No se puede leer el fichero de configuracion");
+					return false;
+
+				}
+
+			}
+
+			else	{
+
+				Serial.println("No se ha encontrado un fichero de configuracion.");
+				Serial.println("Por favor configura el dispositivo desde el terminal serie y reinicia el controlador.");
+				return false;
+
+			}
+
+		}
+
+		else {
+
+			Serial.println("Sistema de ficheros SPIFF creado. Por favor reinicia el controlador.");
+			return false;
+
+		}
+
+	}
+	
+	// Salvar la configuracion en el fichero
+	boolean ConfigClass::escribeconfig(){
+
+		Serial.println("Salvando la configuracion en el fichero");
+		DynamicJsonBuffer jsonBuffer;
+		JsonObject& json = jsonBuffer.createObject();
+		json["mqttserver"] = mqttserver;
+		json["mqttport"] = mqttport;
+		json["mqtttopic"] = mqtttopic;
+		json["mqttusuario"] = mqttusuario;
+		json["mqttpassword"] = mqttpassword;
+
+		File configFile = SPIFFS.open(c_fichero, "w");
+		if (!configFile) {
+			Serial.println("No se puede abrir el fichero de configuracion");
+			return false;
+		}
+
+		//json.prettyPrintTo(Serial);
+		json.printTo(configFile);
+		configFile.close();
+		Serial.println("Configuracion Salvada");
+		//end save
+		return true;
+	}
+
+	// Objeto de la clase ConfigClass (configuracion guardada en el fichero)
+	ConfigClass MiConfig = ConfigClass("./BMDomo1.json");
+
+#pragma endregion
+
 #pragma region CLASE BMDomo1 - Clase principial para el objeto que representa la cupula, sus estados, propiedades y acciones
 
 // Una clase tiene 2 partes:
@@ -138,8 +267,7 @@ portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 // La segunda es la IMPLEMENTACION de esos metodos o propiedades (que hacen). En C++ mas que nada de los METODOS (que son basicamente funciones)
 
 // Definicion
-class BMDomo1
-{
+class BMDomo1{
 
 #pragma region DEFINICIONES BMDomo1
 private:
@@ -247,8 +375,8 @@ long BMDomo1::PasosToGrados(long pasos) {
 	}
 }
 
-
 #pragma endregion
+
 
 
 #pragma region Funciones Publicas
@@ -657,80 +785,6 @@ BMDomo1 MiCupula(MECANICA_SENSOR_HOME);
 
 #pragma endregion
 
-#pragma region funciones de gestion de la configuracion
-
-// Funcion para leer la configuracion desde el fichero de configuracion
-void LeeConfig() {
-
-	// El true es para formatear el sistema de ficheros si falla el montage. Si veo que hace cosas raras mejorar (no hacerlo siempre)
-	if (SPIFFS.begin(true)) {
-		Serial.println("Sistema de ficheros montado");
-		if (SPIFFS.exists("/config.json")) {
-			// Si existe el fichero abrir y leer la configuracion y asignarsela a las variables definidas arriba
-			Serial.println("Leyendo configuracion del fichero");
-			File configFile = SPIFFS.open("/config.json", "r");
-			if (configFile) {
-				Serial.println("Fichero de configuracion encontrado");
-				size_t size = configFile.size();
-				// Declarar un buffer para almacenar el contenido del fichero
-				std::unique_ptr<char[]> buf(new char[size]);
-				// Leer el fichero al buffer
-				configFile.readBytes(buf.get(), size);
-				DynamicJsonBuffer jsonBuffer;
-				JsonObject& json = jsonBuffer.parseObject(buf.get());
-				//json.printTo(Serial);
-				if (json.success()) {
-					Serial.println("Configuracion del fichero leida");
-
-					// Leer los valores del MQTT
-					strcpy(MiConfigMqtt.mqtt_server, json["mqtt_server"]);
-					strcpy(MiConfigMqtt.mqtt_port, json["mqtt_port"]);
-					strcpy(MiConfigMqtt.mqtt_topic, json["mqtt_topic"]);
-					strcpy(MiConfigMqtt.mqtt_usuario, json["mqtt_usuario"]);
-					strcpy(MiConfigMqtt.mqtt_password, json["mqtt_password"]);
-
-				}
-				else {
-					Serial.println("No se puede carcar la configuracion desde el fichero");
-				}
-			}
-		}
-	}
-	else {
-
-		Serial.println("No se puede montar el sistema de ficheros");
-	}
-
-
-}
-
-// Funcion para Salvar la configuracion en el fichero de configuracion
-void SalvaConfig() {
-
-	Serial.println("Salvando la configuracion en el fichero");
-	DynamicJsonBuffer jsonBuffer;
-	JsonObject& json = jsonBuffer.createObject();
-	json["mqtt_server"] = MiConfigMqtt.mqtt_server;
-	json["mqtt_port"] = MiConfigMqtt.mqtt_port;
-	json["mqtt_topic"] = MiConfigMqtt.mqtt_topic;
-	json["mqtt_usuario"] = MiConfigMqtt.mqtt_usuario;
-	json["mqtt_password"] = MiConfigMqtt.mqtt_password;
-
-	File configFile = SPIFFS.open("/config.json", "w");
-	if (!configFile) {
-		Serial.println("No se puede abrir el fichero de configuracion");
-	}
-
-	//json.prettyPrintTo(Serial);
-	json.printTo(configFile);
-	configFile.close();
-	Serial.println("Configuracion Salvada");
-	//end save
-
-}
-
-#pragma endregion
-
 #pragma region Funciones de gestion de las conexiones Wifi
 
 // Funcion ante un evento de la wifi
@@ -774,23 +828,23 @@ void onMqttConnect(bool sessionPresent) {
 
 	
 	// Suscribirse al topic de Entrada de Comandos
-	if (ClienteMQTT.subscribe(MiConfigMqtt.cmndTopic.c_str(), 2)) {
+	if (ClienteMQTT.subscribe(MiConfig.cmndTopic.c_str(), 2)) {
 
 		// Si suscrito correctamente
-		Serial.println("Suscrito al topic " + MiConfigMqtt.cmndTopic);
+		Serial.println("Suscrito al topic " + MiConfig.cmndTopic);
 
 		susflag = true;				
 
 	}
 		
-	else { Serial.println("Error Suscribiendome al topic " + MiConfigMqtt.cmndTopic); }
+	else { Serial.println("Error Suscribiendome al topic " + MiConfig.cmndTopic); }
 
 	
 	// Publicar un Online en el LWT
-	if (ClienteMQTT.publish((MiConfigMqtt.teleTopic + "/LWT").c_str(), 2,true,"Online")){
+	if (ClienteMQTT.publish((MiConfig.teleTopic + "/LWT").c_str(), 2,true,"Online")){
 
 		// Si llegamos hasta aqui es estado de las comunicaciones con WIFI y MQTT es OK
-		Serial.println("Publicado Online en Topic LWT: " + (MiConfigMqtt.teleTopic + "/LWT"));
+		Serial.println("Publicado Online en Topic LWT: " + (MiConfig.teleTopic + "/LWT"));
 		
 		lwtflag = true;
 
@@ -811,7 +865,6 @@ void onMqttConnect(bool sessionPresent) {
 		Serial.println("Controlador Azimut Iniciado Correctamente: MQTT-OK");
 
 	}
-
 
 }
 
@@ -886,7 +939,7 @@ void onMqttPublish(uint16_t packetId) {
 // Manda a la cola de respuestas el mensaje de respuesta. Esta funcion la uso como CALLBACK para el objeto cupula
 void MandaRespuesta(String comando, String payload) {
 
-			String t_topic = MiConfigMqtt.statTopic + "/" + comando;
+			String t_topic = MiConfig.statTopic + "/" + comando;
 
 			DynamicJsonBuffer jsonBuffer;
 			JsonObject& ObjJson = jsonBuffer.createObject();
@@ -912,7 +965,7 @@ void MandaTelemetria() {
 	
 	if (ClienteMQTT.connected()){
 
-			String t_topic = MiConfigMqtt.teleTopic + "/INFO1";
+			String t_topic = MiConfig.teleTopic + "/INFO1";
 
 			DynamicJsonBuffer jsonBuffer;
 			JsonObject& ObjJson = jsonBuffer.createObject();
@@ -930,145 +983,6 @@ void MandaTelemetria() {
 	}
 	
 }
-
-
-#pragma endregion
-
-#pragma region Funciones de implementacion de los comandos disponibles por el puerto serie
-
-// Manejadores de los comandos. Aqui dentro lo que queramos hacer con cada comando.
-void cmd_WIFI_hl(SerialCommands* sender)
-{
-
-	char* parametro1 = sender->Next();
-	if (parametro1 == NULL)
-	{
-		sender->GetSerial()->println("SSID: " + WiFi.SSID() + " Password: " + WiFi.psk());
-		return;
-	}
-
-	char* parametro2 = sender->Next();
-	if (parametro2 == NULL)
-	{
-		sender->GetSerial()->println("SSID: " + WiFi.SSID() + " Password: " + WiFi.psk());
-		return;
-	}
-
-	char buffer_ssid[30];
-	char buffer_passwd[100];
-
-	String(parametro1).toCharArray(buffer_ssid, sizeof(buffer_ssid));
-	String(parametro2).toCharArray(buffer_passwd, sizeof(buffer_passwd));
-
-	sender->GetSerial()->println("Conectando a la Wifi. SSID: " + String(buffer_ssid) + " Password: " + String(buffer_passwd));
-
-	WiFi.begin(buffer_ssid, buffer_passwd);
-
-}
-
-
-void cmd_MQTTSrv_hl(SerialCommands* sender)
-{
-
-	char* parametro = sender->Next();
-	if (parametro == NULL)
-	{
-		sender->GetSerial()->println("MQTTSrv: " + String(MiConfigMqtt.mqtt_server));
-		return;
-	}
-
-	strcpy(MiConfigMqtt.mqtt_server, parametro);
-
-	sender->GetSerial()->println("MQTTSrv: " + String(parametro));
-}
-
-
-void cmd_MQTTUser_hl(SerialCommands* sender)
-{
-
-	char* parametro = sender->Next();
-	if (parametro == NULL)
-	{
-		sender->GetSerial()->println("MQTTUser: " + String(MiConfigMqtt.mqtt_usuario));
-		return;
-	}
-
-	strcpy(MiConfigMqtt.mqtt_usuario, parametro);
-
-	sender->GetSerial()->println("MQTTUser: " + String(parametro));
-}
-
-
-void cmd_MQTTPassword_hl(SerialCommands* sender)
-{
-
-	char* parametro = sender->Next();
-	if (parametro == NULL)
-	{
-		sender->GetSerial()->println("MQTTPassword: " + String(MiConfigMqtt.mqtt_password));
-		return;
-	}
-
-	strcpy(MiConfigMqtt.mqtt_password, parametro);
-
-	sender->GetSerial()->println("MQTTPassword: " + String(parametro));
-}
-
-
-void cmd_MQTTTopic_hl(SerialCommands* sender)
-{
-
-	char* parametro = sender->Next();
-	if (parametro == NULL)
-	{
-		sender->GetSerial()->println("MQTTTopic: " + String(MiConfigMqtt.mqtt_topic));
-		return;
-	}
-
-	strcpy(MiConfigMqtt.mqtt_topic, parametro);
-
-	sender->GetSerial()->println("MQTTTopic: " + String(parametro));
-}
-
-
-void cmd_SaveConfig_hl(SerialCommands* sender)
-{
-
-	SalvaConfig();
-
-}
-
-
-void cmd_Prueba_hl(SerialCommands* sender)
-{
-
-	
-
-}
-
-
-// Manejardor para comandos desconocidos
-void cmd_error(SerialCommands* sender, const char* cmd)
-{
-	sender->GetSerial()->print("ERROR: No se reconoce el comando [");
-	sender->GetSerial()->print(cmd);
-	sender->GetSerial()->println("]");
-}
-
-// Objetos Comandos
-SerialCommand cmd_WIFI("WIFI", cmd_WIFI_hl);
-SerialCommand cmd_MQTTSrv("MQTTSrv", cmd_MQTTSrv_hl);
-SerialCommand cmd_MQTTUser("MQTTUser", cmd_MQTTUser_hl);
-SerialCommand cmd_MQTTPassword("MQTTPassword", cmd_MQTTPassword_hl);
-SerialCommand cmd_MQTTTopic("MQTTTopic", cmd_MQTTTopic_hl);
-SerialCommand cmd_SaveConfig("SaveConfig", cmd_SaveConfig_hl);
-SerialCommand cmd_Prueba("Prueba", cmd_Prueba_hl);
-
-// Buffer para los comandos. Gordote para el comando Wifi que lleva parametros gordos.
-char serial_command_buffer_[120];
-
-// Bind del objeto con el puerto serie usando el buffer
-SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_command_buffer_), "\r\n", " ");
 
 
 #pragma endregion
@@ -1203,14 +1117,45 @@ void TaskProcesaComandos ( void * parameter ){
 
 					}
 
+					// ##### COMANDOS PARA LA GESTION DE LA CONFIGURACION
+
+
+					else if (COMANDO == "WSSID"){
+						
+					}
+
+					else if (COMANDO == "WPasswd"){
+
+					}
+
+					else if (COMANDO == "MQTTSrv"){
+
+					}
+
+					else if (COMANDO == "MQTTUser"){
+
+					}
+
+					else if (COMANDO == "MQTTPasswd"){
+
+					}
+
+					else if (COMANDO == "MQTTTopic"){
+
+					}
+
+					else if (COMANDO == "SaveConfig"){
+
+					}
 
 
 					// Y Ya si no es de ninguno de estos grupos ....
 
 					else {
 
-						Serial.print("Me ha llegado un comando que no entiendo: ");
-						Serial.println(JSONmessageBuffer);
+						Serial.println("Me ha llegado un comando que no entiendo");
+						Serial.println("Comando: " + COMANDO);
+						Serial.println("Payload: " + PAYLOAD);
 
 					}
 
@@ -1218,9 +1163,8 @@ void TaskProcesaComandos ( void * parameter ){
 
 				else {
 
-						Serial.print("Me ha llegado un comando que no puedo Deserializar: ");
-						Serial.println(JSONmessageBuffer);
-
+						Serial.println("Me ha llegado un comando que no puedo Deserializar: ");
+						
 				}
 			
 			}
@@ -1311,21 +1255,82 @@ void TaskComandosSerieRun( void * parameter ){
 	const TickType_t xFrequency = 100;
 	xLastWakeTime = xTaskGetTickCount ();
 
-	// Añadir los comandos al objeto manejador de comandos serie
-	serial_commands_.AddCommand(&cmd_WIFI);
-	serial_commands_.AddCommand(&cmd_MQTTSrv);
-	serial_commands_.AddCommand(&cmd_MQTTUser);
-	serial_commands_.AddCommand(&cmd_MQTTPassword);
-	serial_commands_.AddCommand(&cmd_MQTTTopic);
-	serial_commands_.AddCommand(&cmd_SaveConfig);
-	serial_commands_.AddCommand(&cmd_Prueba);
-	
-	// Manejador para los comandos Serie no reconocidos.
-	serial_commands_.SetDefaultHandler(&cmd_error);
+	char sr_buffer[120];
+	int16_t sr_buffer_len(sr_buffer!=NULL && sizeof(sr_buffer) > 0 ? sizeof(sr_buffer) - 1 : 0);
+	int16_t sr_buffer_pos = 0;
+	char* sr_term = "\r\n";
+	char* sr_delim = " ";
+	int16_t sr_term_pos = 0;
+	char* sr_last_token;
+	char* comando = "NA";
+	char* parametro1 = "NA";
 
 	while(true){
 		
-		serial_commands_.ReadSerial();
+		while (Serial.available()) {
+
+			// leer un caracter del serie (en ASCII)
+			int ch = Serial.read();
+
+			// Si es menor de 0 es KAKA
+			if (ch <= 0) {
+				
+				continue;
+			
+			}
+
+			// Si el buffer no esta lleno, escribir el caracter en el buffer y avanzar el puntero
+			if (sr_buffer_pos < sr_buffer_len){
+			
+				sr_buffer[sr_buffer_pos++] = ch;
+				//Serial.println("DEBUG: " + String(sr_buffer));
+
+			}
+		
+			// Si esta lleno ........
+			else { 
+
+				return;
+
+			}
+
+			// Aqui para detectar el retorno de linea
+			if (sr_term[sr_term_pos] != ch){
+				sr_term_pos = 0;
+				continue;
+			}
+
+			// Si hemos detectado el retorno de linea .....
+			if (sr_term[++sr_term_pos] == 0){
+
+				sr_buffer[sr_buffer_pos - strlen(sr_term)] = '\0';
+
+				// Aqui para sacar cada una de las "palabras" del comando que hemos recibido con la funcion strtok_r (curiosa funcion)
+				comando = strtok_r(sr_buffer, sr_delim, &sr_last_token);
+				parametro1 = strtok_r(NULL, sr_delim, &sr_last_token);
+
+				// Formatear el JSON del comando y mandarlo a la cola de comandos.
+				DynamicJsonBuffer jsonBuffer;
+				JsonObject& ObjJson = jsonBuffer.createObject();
+				ObjJson.set("COMANDO",comando);
+				ObjJson.set("PAYLOAD",parametro1);
+
+				char JSONmessageBuffer[100];
+				ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+			
+				// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
+				xQueueSend(ColaComandos, &JSONmessageBuffer, 0);
+				
+				// Reiniciar los buffers
+				sr_buffer[0] = '\0';
+				sr_buffer_pos = 0;
+				sr_term_pos = 0;
+				
+			}
+		
+
+		}
+	
 		
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
@@ -1397,7 +1402,7 @@ void IRAM_ATTR timer_stp_isr() {
 
 // funcion SETUP de Arduino
 void setup() {
-
+	
 	// Puerto Serie
 	Serial.begin(115200);
 	Serial.println();
@@ -1407,37 +1412,31 @@ void setup() {
 	// Asignar funciones Callback de Micupula
 	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
 		
-		// Leer la configuracion que hay en el archivo de configuracion config.json
-	Serial.println("Leyendo fichero de configuracion");
-	LeeConfig();
-	
-	// MQTT
+	// Comunicaciones
 	ClienteMQTT = AsyncMqttClient();
-
-	// Dar valor a las strings con los nombres de la estructura de los topics
-	MiConfigMqtt.cmndTopic = "cmnd/" + String(MiConfigMqtt.mqtt_topic) + "/#";
-	MiConfigMqtt.statTopic = "stat/" + String(MiConfigMqtt.mqtt_topic);
-	MiConfigMqtt.teleTopic = "tele/" + String(MiConfigMqtt.mqtt_topic);
-	MiConfigMqtt.lwtTopic = MiConfigMqtt.teleTopic + "/LWT";
-
-	// Las funciones callback de la libreria MQTT	
-	ClienteMQTT.onConnect(onMqttConnect);
-  ClienteMQTT.onDisconnect(onMqttDisconnect);
-  ClienteMQTT.onSubscribe(onMqttSubscribe);
-  ClienteMQTT.onUnsubscribe(onMqttUnsubscribe);
-  ClienteMQTT.onMessage(onMqttMessage);
-  ClienteMQTT.onPublish(onMqttPublish);
-  ClienteMQTT.setServer(MiConfigMqtt.mqtt_server, 1883);
-	ClienteMQTT.setCleanSession(true);
-	ClienteMQTT.setClientId("ControlAzimut");
-	ClienteMQTT.setCredentials(MiConfigMqtt.mqtt_usuario,MiConfigMqtt.mqtt_password);
-	ClienteMQTT.setKeepAlive(4);
-	ClienteMQTT.setWill(MiConfigMqtt.lwtTopic.c_str(),2,true,"Offline");
-
-	// WIFI
 	WiFi.onEvent(WiFiEventCallBack);
-	WiFi.begin();
 	
+	// Leer la configuracion del fichero
+	if (MiConfig.leeconfig()){
+
+		// Las funciones callback de la libreria MQTT	
+		ClienteMQTT.onConnect(onMqttConnect);
+  	ClienteMQTT.onDisconnect(onMqttDisconnect);
+  	ClienteMQTT.onSubscribe(onMqttSubscribe);
+  	ClienteMQTT.onUnsubscribe(onMqttUnsubscribe);
+  	ClienteMQTT.onMessage(onMqttMessage);
+  	ClienteMQTT.onPublish(onMqttPublish);
+  	ClienteMQTT.setServer(MiConfig.mqttserver, 1883);
+		ClienteMQTT.setCleanSession(true);
+		ClienteMQTT.setClientId("ControlAzimut");
+		ClienteMQTT.setCredentials(MiConfig.mqttusuario,MiConfig.mqttpassword);
+		ClienteMQTT.setKeepAlive(4);
+		ClienteMQTT.setWill(MiConfig.lwtTopic.c_str(),2,true,"Offline");
+		
+		WiFi.begin();
+
+	}
+
 	// Instanciar el controlador de Stepper.
 	ControladorStepper = AccelStepper(AccelStepper::DRIVER, MECANICA_STEPPER_PULSEPIN , MECANICA_STEPPER_DIRPIN);
 	ControladorStepper.disableOutputs();
@@ -1455,7 +1454,6 @@ void setup() {
 	// TASKS
 	Serial.println("Creando tareas ...");
 	
-
 	// Tareas CORE0 gestinadas por FreeRTOS
 	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
 	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,0);
