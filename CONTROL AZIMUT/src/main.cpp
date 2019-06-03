@@ -289,7 +289,7 @@ private:
 	bool Aparcando;								// Para saber si estamos yendo a aparcar
 	float TotalPasos;							// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
 	Bounce Debouncer_HomeSwitch = Bounce(); // Objeto debouncer para el switch HOME
-	
+	bool HayQueSalvar;
 		
 	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
 	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
@@ -311,10 +311,10 @@ public:
 
 
 	//  Variables Publicas
-	String HardwareInfo;						// Identificador del HardWare y Software
+	String HardwareInfo;				// Identificador del HardWare y Software
 	bool ComOK;									// Si la wifi y la conexion MQTT esta OK
-	bool DriverOK;								// Si estamos conectados al driver del PC y esta OK
-	bool HardwareOK;							// Si nosotros estamos listos para todo (para informar al driver del PC)
+	bool DriverOK;							// Si estamos conectados al driver del PC y esta OK
+	bool HardwareOK;						// Si nosotros estamos listos para todo (para informar al driver del PC)
 	bool Slewing;								// Si alguna parte del Domo esta moviendose
 	bool AtHome;								// Si esta parada en HOME
 	bool AtPark;								// Si esta en la posicion de PARK									
@@ -362,8 +362,7 @@ BMDomo1::BMDomo1(uint8_t PinHome) {
 	Debouncer_HomeSwitch.attach(PinHome);
 	Debouncer_HomeSwitch.interval(5);
 	ParkPos = 0;
-
-		
+	HayQueSalvar = false;
 
 }
 
@@ -413,7 +412,7 @@ void BMDomo1::SetRespondeComandoCallback(RespondeComandoCallback ref) {
 String BMDomo1::MiEstadoJson(int categoria) {
 
 	// Esto crea un objeto de tipo JsonObject para el "contenedor de objetos a serializar". De tamaño Objetos + 1
-	const int capacity = JSON_OBJECT_SIZE(11);
+	const int capacity = JSON_OBJECT_SIZE(12);
 	StaticJsonBuffer<capacity> jBuffer;
 	//DynamicJsonBuffer jBuffer;
 	JsonObject& jObj = jBuffer.createObject();
@@ -429,7 +428,8 @@ String BMDomo1::MiEstadoJson(int categoria) {
 		jObj.set("CS", ComOK);																	// Info de la conexion WIFI y MQTT
 		jObj.set("DS", DriverOK);																// Info de la comunicacion con el DRIVER ASCOM (o quiza la cambiemos para comunicacion con "cualquier" driver, incluido uno nuestro
 		jObj.set("HS", HardwareOK);															// Info del estado de inicializacion de la mecanica
-		jObj.set("AZ", GetCurrentAzimut());											// Posicion Actual (de momento en STEPS)
+		jObj.set("AZ", GetCurrentAzimut());											// Posicion Actual (AZ)
+		jObj.set("ATH", AtHome); 															  // Propiedad AtHome
 		jObj.set("PRK", ParkPos);																// Posicion almacenada de Park
 		jObj.set("ATPRK", AtPark);															// Propiedad AtPark
 		jObj.set("POS", ControladorStepper.currentPosition());  // Posicion en pasos del objeto del Stepper
@@ -704,19 +704,9 @@ void BMDomo1::SetPark(int l_ParkPos){
 	if (l_ParkPos >= 0 && l_ParkPos <360){
 
 		ParkPos = l_ParkPos;
+		HayQueSalvar = true;
+		MiRespondeComandos("SetPark", "SET_OK");
 		
-		if (SalvaConfig()){
-
-			MiRespondeComandos("SetPark", "SET_OK");
-
-		}
-		
-		else {
-
-			MiRespondeComandos("SetPark", "ERR_SAV");
-
-		}
-
 	}
 
 	else {
@@ -790,6 +780,17 @@ void BMDomo1::Run() {
 	// Esto es si estamos parados
 	else {
 
+		// Salvar config si hay que salvar
+		// Esto hago asi porque si estamos moviendo el motor me salta un panic al acceder al SPIFFS
+		// Esto sera por un tema de interrupciones
+		if (HayQueSalvar){
+
+			SalvaConfig();
+			HayQueSalvar = false;
+
+		}
+		
+
 		// Si la posicion del stepper en el objeto de su libreria esta fuera de rangos y estoy parado corregir
 		if (ControladorStepper.currentPosition() > TotalPasos || ControladorStepper.currentPosition() < 0) {
 
@@ -804,9 +805,10 @@ void BMDomo1::Run() {
 
 			if (this->Aparcando == true){
 
-				MiRespondeComandos("Park","PRK_DONE");
+				this->HardwareOK = false;
 				this->Aparcando = false;
-
+				MiRespondeComandos("Park","PRK_DONE");
+			
 			}
 
 		}
@@ -1008,12 +1010,13 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   
 	String s_topic = String(topic);
 
-	// CASCA SI NO VIENE PAYLOAD. MEJORAR
+		// Para que no casque si no viene payload. Asi todo OK al gestor de comandos le llega vacio como debe ser, el JSON lo pone bien.
+		if (payload == NULL){
 
-	if (payload != NULL){
+			payload = "NULL";
 
-		//Serial.println("Me ha llegado un comando con payload NULL. Topic: " + String(topic));
-
+		}
+	
 		// Lo que viene en el char* payload viene de un buffer que trae KAKA, hay que limpiarlo (para eso nos pasan len y tal)
 		char c_payload[len+1]; 										// Array para el payload y un hueco mas para el NULL del final
 		strlcpy(c_payload, payload, len+1); 			// Copiar del payload el tamaño justo. strcopy pone al final un NULL
@@ -1046,7 +1049,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 			
 		}
 
-	}
+	//}
 
 }
 
