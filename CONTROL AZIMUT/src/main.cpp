@@ -101,6 +101,9 @@ QueueHandle_t ColaComandos,ColaRespuestas;
 hw_timer_t * timer_stp = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
+// Flag para el estado del sistema de ficheros
+
+boolean SPIFFStatus = false;
 
 #pragma endregion
 
@@ -111,7 +114,7 @@ class ConfigClass{
 	private:
 
 		String c_fichero;
-
+	
 	public:
 	
 		char mqttserver[40];
@@ -125,6 +128,14 @@ class ConfigClass{
 		String teleTopic;
 		String lwtTopic;
 
+		// Esto no se salva en el fichero, lo hace el objeto Wifi
+		// Lo pongo aqui como almacenamiento temporal para los comandos de configuracion
+		char Wssid[30];
+		char WPasswd[100];
+
+
+		// Otras configuraciones permanentes del la cupula
+		int ParkPos;
 
 		ConfigClass(String fichero);
 		~ConfigClass() {};
@@ -146,84 +157,77 @@ class ConfigClass{
 		mqtttopic[0] = '\0';
 		mqttusuario[0] = '\0';
 		mqttpassword[0] = '\0';
-		
+
+		Wssid[0] = '\0';
+		WPasswd[0]  = '\0';	
+				
 	}
 
 	// Seer la configuracion desde el fichero
 	boolean ConfigClass::leeconfig(){
+	
+		if (SPIFFS.exists(c_fichero)) {
+			// Si existe el fichero abrir y leer la configuracion y asignarsela a las variables definidas arriba
+			File ComConfigFile = SPIFFS.open(c_fichero, "r");
+			if (ComConfigFile) {
+				size_t size = ComConfigFile.size();
+				// Declarar un buffer para almacenar el contenido del fichero
+				std::unique_ptr<char[]> buf(new char[size]);
+				// Leer el fichero al buffer
+				ComConfigFile.readBytes(buf.get(), size);
+				DynamicJsonBuffer jsonBuffer;
+				JsonObject& json = jsonBuffer.parseObject(buf.get());
+				//json.printTo(Serial);
+				
+				if (json.success()) {
+					Serial.print("Configuracion del fichero leida: ");
+					json.printTo(Serial);
+				  Serial.println("");
 
-		if (SPIFFS.begin(true)) {
-			Serial.println("Sistema de ficheros montado");
-			if (SPIFFS.exists(c_fichero)) {
-				// Si existe el fichero abrir y leer la configuracion y asignarsela a las variables definidas arriba
-				Serial.println("Leyendo configuracion del fichero");
-				File configFile = SPIFFS.open(c_fichero, "r");
-				if (configFile) {
-					Serial.println("Fichero de configuracion encontrado");
-					size_t size = configFile.size();
-					// Declarar un buffer para almacenar el contenido del fichero
-					std::unique_ptr<char[]> buf(new char[size]);
-					// Leer el fichero al buffer
-					configFile.readBytes(buf.get(), size);
-					DynamicJsonBuffer jsonBuffer;
-					JsonObject& json = jsonBuffer.parseObject(buf.get());
-					//json.printTo(Serial);
-					if (json.success()) {
-						Serial.println("Configuracion del fichero leida");
+					// Leer los valores del MQTT
+					strcpy(mqttserver, json["mqttserver"]);
+					strcpy(mqttport, json["mqttport"]);
+					strcpy(mqtttopic, json["mqtttopic"]);
+					strcpy(mqttusuario, json["mqttusuario"]);
+					strcpy(mqttpassword, json["mqttpassword"]);
 
-						// Leer los valores del MQTT
-						strcpy(mqttserver, json["mqttserver"]);
-						strcpy(mqttport, json["mqttport"]);
-						strcpy(mqtttopic, json["mqtttopic"]);
-						strcpy(mqttusuario, json["mqttusuario"]);
-						strcpy(mqttpassword, json["mqttpassword"]);
+					// Dar valor a las strings con los nombres de la estructura de los topics
+					cmndTopic = "cmnd/" + String(mqtttopic) + "/#";
+					statTopic = "stat/" + String(mqtttopic);
+					teleTopic = "tele/" + String(mqtttopic);
+					lwtTopic = teleTopic + "/LWT";
+					return true;
 
-						// Dar valor a las strings con los nombres de la estructura de los topics
-						cmndTopic = "cmnd/" + String(mqtttopic) + "/#";
-						statTopic = "stat/" + String(mqtttopic);
-						teleTopic = "tele/" + String(mqtttopic);
-						lwtTopic = teleTopic + "/LWT";
-						return true;
-
-						Serial.println("Servidor MQTT: " + String(mqttserver)) + ":" + String(mqttport);
-						Serial.println("Topic Comandos: " + cmndTopic);
-						Serial.println("Topic Respuestas: " + statTopic);
-						Serial.println("Topic Telemetria: " + teleTopic);
-						Serial.println("Topic LWT: " + lwtTopic);
-						
-					}
-					
-					else {
-
-						Serial.println("No se puede cargar la configuracion desde el fichero");
-						return false;
-
-					}
+					Serial.println("Servidor MQTT: " + String(mqttserver)) + ":" + String(mqttport);
+					Serial.println("Topic Comandos: " + cmndTopic);
+					Serial.println("Topic Respuestas: " + statTopic);
+					Serial.println("Topic Telemetria: " + teleTopic);
+					Serial.println("Topic LWT: " + lwtTopic);
+										
 				}
-
+					
 				else {
 
-					Serial.println ("No se puede leer el fichero de configuracion");
+					Serial.println("No se puede cargar la configuracion desde el fichero");
 					return false;
 
 				}
-
 			}
 
-			else	{
+			else {
 
-				Serial.println("No se ha encontrado un fichero de configuracion.");
-				Serial.println("Por favor configura el dispositivo desde el terminal serie y reinicia el controlador.");
+				Serial.println ("No se puede leer el fichero de configuracion");
 				return false;
 
 			}
 
 		}
 
-		else {
+		else	{
 
-			Serial.println("Sistema de ficheros SPIFF creado. Por favor reinicia el controlador.");
-			return false;
+				Serial.println("No se ha encontrado un fichero de configuracion.");
+				Serial.println("Por favor configura el dispositivo desde el terminal serie y reinicia el controlador.");
+				return false;
 
 		}
 
@@ -240,23 +244,30 @@ class ConfigClass{
 		json["mqtttopic"] = mqtttopic;
 		json["mqttusuario"] = mqttusuario;
 		json["mqttpassword"] = mqttpassword;
-
-		File configFile = SPIFFS.open(c_fichero, "w");
-		if (!configFile) {
-			Serial.println("No se puede abrir el fichero de configuracion");
+		
+		File ComConfigFile = SPIFFS.open(c_fichero, "w");
+		if (!ComConfigFile) {
+			Serial.println("No se puede abrir el fichero de configuracion de las comunicaciones");
 			return false;
 		}
 
 		//json.prettyPrintTo(Serial);
-		json.printTo(configFile);
-		configFile.close();
+		json.printTo(ComConfigFile);
+		ComConfigFile.close();
 		Serial.println("Configuracion Salvada");
-		//end save
+		
+		// Dar valor a las strings con los nombres de la estructura de los topics
+		cmndTopic = "cmnd/" + String(mqtttopic) + "/#";
+		statTopic = "stat/" + String(mqtttopic);
+		teleTopic = "tele/" + String(mqtttopic);
+		lwtTopic = teleTopic + "/LWT";
+
 		return true;
+
 	}
 
 	// Objeto de la clase ConfigClass (configuracion guardada en el fichero)
-	ConfigClass MiConfig = ConfigClass("./BMDomo1.json");
+	ConfigClass MiConfig = ConfigClass("/Comunicaciones.json");
 
 #pragma endregion
 
@@ -275,9 +286,10 @@ private:
 	// Variables Internas para uso de la clase
 	bool Inicializando;						// Para saber que estamos ejecutando el comando INITHW
 	bool BuscandoCasa;						// Para saber que estamos ejecutando el comando FINDHOME
+	bool Aparcando;								// Para saber si estamos yendo a aparcar
 	float TotalPasos;							// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
 	Bounce Debouncer_HomeSwitch = Bounce(); // Objeto debouncer para el switch HOME
-	int ParkPos;									// Para almacenar la posicion de Park en la clase
+	
 		
 	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
 	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
@@ -290,6 +302,7 @@ private:
 	long GradosToPasos(long grados);													// Convierte Grados a Pasos segun la mecanica
 	long PasosToGrados(long pasos);														// Convierte pasos a grados segun la mecanica
 	
+	boolean SalvaConfig();
 
 public:
 
@@ -304,7 +317,8 @@ public:
 	bool HardwareOK;							// Si nosotros estamos listos para todo (para informar al driver del PC)
 	bool Slewing;								// Si alguna parte del Domo esta moviendose
 	bool AtHome;								// Si esta parada en HOME
-													
+	bool AtPark;								// Si esta en la posicion de PARK									
+	int ParkPos;								// Para almacenar la posicion de Park en la clase
 
 	// Funciones Publicas
 	String MiEstadoJson(int categoria);								// Devuelve un JSON con los estados en un array de 100 chars (la libreria MQTT no puede con mas de 100)
@@ -319,6 +333,8 @@ public:
 	void Connected(boolean status);					// Para implementar la propiedad-metodo Connected
 	void AbortSlew();
 	void SetPark(int l_ParkPos);
+	void Park();
+	boolean LeeConfig();
 
 };
 
@@ -338,12 +354,16 @@ BMDomo1::BMDomo1(uint8_t PinHome) {
 	Slewing = false;			
 	BuscandoCasa = false;
 	AtHome = false;
+	AtPark = false;
+	Aparcando = false;
 	TotalPasos = (float)(MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR) / (float)(MECANICA_DIENTES_PINON_ATAQUE);
 	// Inicializacion del sensor de HOMME
 	pinMode(PinHome, INPUT_PULLUP);
 	Debouncer_HomeSwitch.attach(PinHome);
 	Debouncer_HomeSwitch.interval(5);
 	ParkPos = 0;
+
+		
 
 }
 
@@ -393,7 +413,7 @@ void BMDomo1::SetRespondeComandoCallback(RespondeComandoCallback ref) {
 String BMDomo1::MiEstadoJson(int categoria) {
 
 	// Esto crea un objeto de tipo JsonObject para el "contenedor de objetos a serializar". De tamaño Objetos + 1
-	const int capacity = JSON_OBJECT_SIZE(10);
+	const int capacity = JSON_OBJECT_SIZE(11);
 	StaticJsonBuffer<capacity> jBuffer;
 	//DynamicJsonBuffer jBuffer;
 	JsonObject& jObj = jBuffer.createObject();
@@ -411,6 +431,7 @@ String BMDomo1::MiEstadoJson(int categoria) {
 		jObj.set("HS", HardwareOK);															// Info del estado de inicializacion de la mecanica
 		jObj.set("AZ", GetCurrentAzimut());											// Posicion Actual (de momento en STEPS)
 		jObj.set("PRK", ParkPos);																// Posicion almacenada de Park
+		jObj.set("ATPRK", AtPark);															// Propiedad AtPark
 		jObj.set("POS", ControladorStepper.currentPosition());  // Posicion en pasos del objeto del Stepper
 		jObj.set("TOT", TotalPasos);														// Numero total de pasos por giro de la cupula
 		jObj.set("MAXT", ControladorStepper.maxexectime());		  // Numero total de pasos por giro de la cupula
@@ -683,7 +704,18 @@ void BMDomo1::SetPark(int l_ParkPos){
 	if (l_ParkPos >= 0 && l_ParkPos <360){
 
 		ParkPos = l_ParkPos;
-		MiRespondeComandos("SetPark", "SET_OK");
+		
+		if (SalvaConfig()){
+
+			MiRespondeComandos("SetPark", "SET_OK");
+
+		}
+		
+		else {
+
+			MiRespondeComandos("SetPark", "ERR_SAV");
+
+		}
 
 	}
 
@@ -695,6 +727,13 @@ void BMDomo1::SetPark(int l_ParkPos){
 
 }
 
+void BMDomo1::Park(){
+
+	this->AbortSlew();
+	this->MoveTo(this->ParkPos);
+	this->Aparcando = true;
+
+}
 
 // Esta funcion se lanza desde el loop. Es la que hace las comprobaciones. No debe atrancarse nunca tampoco (ni esta ni ninguna)
 void BMDomo1::Run() {
@@ -748,12 +787,33 @@ void BMDomo1::Run() {
 
 	}
 
+	// Esto es si estamos parados
 	else {
 
 		// Si la posicion del stepper en el objeto de su libreria esta fuera de rangos y estoy parado corregir
 		if (ControladorStepper.currentPosition() > TotalPasos || ControladorStepper.currentPosition() < 0) {
 
 			ControladorStepper.setCurrentPosition(GradosToPasos(GetCurrentAzimut()));
+
+		}
+
+		// Actualizar la propiedad AtPark si estamos parados en el azimut del Park
+		if (this->GetCurrentAzimut() == this->ParkPos){
+			
+			this->AtPark = true;
+
+			if (this->Aparcando == true){
+
+				MiRespondeComandos("Park","PRK_DONE");
+				this->Aparcando = false;
+
+			}
+
+		}
+
+		else{
+
+			this->AtPark = false;
 
 		}
 
@@ -769,7 +829,67 @@ void BMDomo1::Run() {
 		Inicializando = false;
 				
 	}
-	
+
+}
+
+boolean BMDomo1::SalvaConfig(){
+
+	File DomoConfigFile = SPIFFS.open("/BMDomo1.json", "w");
+
+	if (!DomoConfigFile) {
+		Serial.println("No se puede abrir el fichero de configuracion de la cupula");
+		return false;
+	}
+
+	if (DomoConfigFile.print(MiEstadoJson(1))){
+
+		return true;
+
+	}
+
+	else {
+
+		return false;
+
+	}
+
+}
+
+boolean BMDomo1::LeeConfig(){
+
+	// Sacar del fichero de configuracion, si existe, las configuraciones permanentes
+	if (SPIFFS.exists("/BMDomo1.json")) {
+
+		File DomoConfigFile = SPIFFS.open("/BMDomo1.json", "r");
+		if (DomoConfigFile) {
+			size_t size = DomoConfigFile.size();
+			// Declarar un buffer para almacenar el contenido del fichero
+			std::unique_ptr<char[]> buf(new char[size]);
+			// Leer el fichero al buffer
+			DomoConfigFile.readBytes(buf.get(), size);
+			DynamicJsonBuffer jsonBuffer;
+			JsonObject& json = jsonBuffer.parseObject(buf.get());
+			if (json.success()) {
+
+				Serial.print("Configuracion de la cupula Leida: ");
+				json.printTo(Serial);
+				Serial.println("");
+				ParkPos = json["PRK"].as<int>();
+				
+				return true;
+
+			}
+
+			return false;
+
+		}
+
+		return false;
+
+	}
+
+	return false;
+
 }
 
 #pragma endregion
@@ -1106,7 +1226,13 @@ void TaskProcesaComandos ( void * parameter ){
 					else if (COMANDO == "SetPark"){
 
 						MiCupula.SetPark(PAYLOAD.toInt());
+						
+					}
 
+					else if (COMANDO == "Park"){
+
+						MiCupula.Park();
+						
 					}
 
 						
@@ -1119,35 +1245,60 @@ void TaskProcesaComandos ( void * parameter ){
 
 					// ##### COMANDOS PARA LA GESTION DE LA CONFIGURACION
 
-
-					else if (COMANDO == "WSSID"){
+					else if (COMANDO == "WSsid"){
 						
+						String(PAYLOAD).toCharArray(MiConfig.Wssid, sizeof(MiConfig.Wssid));
+						Serial.println("Wssid OK: " + PAYLOAD);
+
 					}
 
 					else if (COMANDO == "WPasswd"){
 
+						String(PAYLOAD).toCharArray(MiConfig.WPasswd, sizeof(MiConfig.WPasswd));
+						Serial.println("Wpasswd OK: " + PAYLOAD);
+						
 					}
 
 					else if (COMANDO == "MQTTSrv"){
+
+						String(PAYLOAD).toCharArray(MiConfig.mqttserver, sizeof(MiConfig.mqttserver));
+						Serial.println("MQTTSrv OK: " + PAYLOAD);
 
 					}
 
 					else if (COMANDO == "MQTTUser"){
 
+						String(PAYLOAD).toCharArray(MiConfig.mqttusuario, sizeof(MiConfig.mqttusuario));
+						Serial.println("MQTTUser OK: " + PAYLOAD);
+
 					}
 
 					else if (COMANDO == "MQTTPasswd"){
+
+						String(PAYLOAD).toCharArray(MiConfig.mqttpassword, sizeof(MiConfig.mqttpassword));
+						Serial.println("MQTTPasswd OK: " + PAYLOAD);
 
 					}
 
 					else if (COMANDO == "MQTTTopic"){
 
+						String(PAYLOAD).toCharArray(MiConfig.mqtttopic, sizeof(MiConfig.mqtttopic));
+						Serial.println("MQTTTopic OK: " + PAYLOAD);
+
 					}
 
-					else if (COMANDO == "SaveConfig"){
+					else if (COMANDO == "SaveCom"){
 
+						if (MiConfig.escribeconfig()){
+
+							ClienteMQTT.setServer(MiConfig.mqttserver, 1883);
+							ClienteMQTT.setCredentials(MiConfig.mqttusuario,MiConfig.mqttpassword);
+							ClienteMQTT.setWill(MiConfig.lwtTopic.c_str(),2,true,"Offline");
+							WiFi.begin(MiConfig.Wssid, MiConfig.WPasswd);
+
+						}
+						
 					}
-
 
 					// Y Ya si no es de ninguno de estos grupos ....
 
@@ -1415,27 +1566,50 @@ void setup() {
 	// Comunicaciones
 	ClienteMQTT = AsyncMqttClient();
 	WiFi.onEvent(WiFiEventCallBack);
-	
-	// Leer la configuracion del fichero
-	if (MiConfig.leeconfig()){
 
-		// Las funciones callback de la libreria MQTT	
-		ClienteMQTT.onConnect(onMqttConnect);
-  	ClienteMQTT.onDisconnect(onMqttDisconnect);
-  	ClienteMQTT.onSubscribe(onMqttSubscribe);
-  	ClienteMQTT.onUnsubscribe(onMqttUnsubscribe);
-  	ClienteMQTT.onMessage(onMqttMessage);
-  	ClienteMQTT.onPublish(onMqttPublish);
-  	ClienteMQTT.setServer(MiConfig.mqttserver, 1883);
-		ClienteMQTT.setCleanSession(true);
-		ClienteMQTT.setClientId("ControlAzimut");
-		ClienteMQTT.setCredentials(MiConfig.mqttusuario,MiConfig.mqttpassword);
-		ClienteMQTT.setKeepAlive(4);
-		ClienteMQTT.setWill(MiConfig.lwtTopic.c_str(),2,true,"Offline");
-		
-		WiFi.begin();
+	// Iniciar la Wifi
+	WiFi.begin();
+
+	// Iniciar el sistema de ficheros y formatear si no lo esta
+	SPIFFStatus = SPIFFS.begin(true);
+
+	if (SPIFFS.begin()){
+
+		Serial.println("Sistema de ficheros montado");
+
+		// Leer la configuracion de Comunicaciones
+		if (MiConfig.leeconfig()){
+
+			// Las funciones callback de la libreria MQTT	
+			ClienteMQTT.onConnect(onMqttConnect);
+  		ClienteMQTT.onDisconnect(onMqttDisconnect);
+  		ClienteMQTT.onSubscribe(onMqttSubscribe);
+  		ClienteMQTT.onUnsubscribe(onMqttUnsubscribe);
+  		ClienteMQTT.onMessage(onMqttMessage);
+  		ClienteMQTT.onPublish(onMqttPublish);
+  		ClienteMQTT.setServer(MiConfig.mqttserver, 1883);
+			ClienteMQTT.setCleanSession(true);
+			ClienteMQTT.setClientId("ControlAzimut");
+			ClienteMQTT.setCredentials(MiConfig.mqttusuario,MiConfig.mqttpassword);
+			ClienteMQTT.setKeepAlive(4);
+			ClienteMQTT.setWill(MiConfig.lwtTopic.c_str(),2,true,"Offline");
+	
+		}
+
+		// Leer configuracion salvada de la Cupula
+		MiCupula.LeeConfig();
 
 	}
+
+	else {
+
+		SPIFFS.begin(true);
+
+	}
+
+	
+		
+	
 
 	// Instanciar el controlador de Stepper.
 	ControladorStepper = AccelStepper(AccelStepper::DRIVER, MECANICA_STEPPER_PULSEPIN , MECANICA_STEPPER_DIRPIN);
@@ -1456,7 +1630,7 @@ void setup() {
 	
 	// Tareas CORE0 gestinadas por FreeRTOS
 	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
-	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",2000,NULL,1,&THandleTaskProcesaComandos,0);
+	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",3000,NULL,1,&THandleTaskProcesaComandos,0);
 	xTaskCreatePinnedToCore(TaskEnviaRespuestas,"EnviaMQTT",2000,NULL,1,&THandleTaskEnviaRespuestas,0);
 	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,0);
 	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
