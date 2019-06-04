@@ -260,3 +260,5 @@ paket-files/
 __pycache__/
 *.pyc
 CONTROL AZIMUT/.vscode/settings.json
+CONTROL AZIMUT/.vscode/extensions.json
+CONTROL AZIMUT/.vscode/settings.json
