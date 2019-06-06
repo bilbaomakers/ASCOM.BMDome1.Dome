@@ -684,6 +684,11 @@ void BMDomo1::AbortSlew(){
 
 		if (ControladorStepper.isRunning() == false){
 
+			// Por si hemos parado estando aparcando o buscando casa
+			Aparcando = false;
+			BuscandoCasa = false;
+
+			// Responder OK.
 			MiRespondeComandos("AbortSlew", "STOPPED");
 			return;
 
