@@ -1,0 +1,96 @@
+CONTROL CUPULA HOMEASSISTANT
+
+EN LA SECCION SENSORES:
+
+- platform: mqtt
+  name: "VERSION FW CONTROLADOR"
+  qos: 2
+  state_topic: "tele/AZIMUT/INFO1"
+  value_template: '{{ value_json.HI}}'
+  availability_topic: "tele/AZIMUT/LWT"
+  payload_available: "Online"
+  payload_not_available: "Offline"
+
+- platform: mqtt
+  name: "HORA CUPULA"
+  qos: 2
+  state_topic: "tele/AZIMUT/INFO1"
+  value_template: '{{ value_json.TIME}}'
+  availability_topic: "tele/AZIMUT/LWT"
+  payload_available: "Online"
+  payload_not_available: "Offline"
+
+- platform: mqtt
+  name: "AZIMUT"
+  qos: 2
+  state_topic: "tele/AZIMUT/INFO1"
+  value_template: '{{ value_json.AZ}}'
+  availability_topic: "tele/AZIMUT/LWT"
+  payload_available: "Online"
+  payload_not_available: "Offline"
+  unit_of_measurement: "º"
+
+- platform: mqtt
+  name: "MAXT"
+  qos: 2
+  state_topic: "tele/AZIMUT/INFO1"
+  value_template: '{{ value_json.MAXT}}'
+  availability_topic: "tele/AZIMUT/LWT"
+  payload_available: "Online"
+  payload_not_available: "Offline"
+  unit_of_measurement: "uS"
+
+- platform: mqtt
+  name: "PARKPOS"
+  qos: 2
+  state_topic: "tele/AZIMUT/INFO1"
+  value_template: '{{ value_json.PRK}}'
+  availability_topic: "tele/AZIMUT/LWT"
+  payload_available: "Online"
+  payload_not_available: "Offline"
+  unit_of_measurement: "º"
+
+  
+  
+  
+ EN LA SECCION BINARY SENSORS
+ 
+ - platform: mqtt
+  name: "HW STATUS"
+  qos: 2
+  state_topic: "tele/AZIMUT/INFO1"
+  availability_topic: "tele/AZIMUT/LWT"
+  value_template: '{{ value_json.HS }}'
+  payload_on: true
+  payload_off: false
+  payload_available: "Online"
+  payload_not_available: "Offline"
+  device_class: light
+
+- platform: mqtt
+  name: "AT HOME"
+  qos: 2
+  state_topic: "tele/AZIMUT/INFO1"
+  availability_topic: "tele/AZIMUT/LWT"
+  value_template: '{{ value_json.ATH }}'
+  payload_on: true
+  payload_off: false
+  payload_available: "Online"
+  payload_not_available: "Offline"
+  device_class: light
+
+- platform: mqtt
+  name: "AT PARK"
+  qos: 2
+  state_topic: "tele/AZIMUT/INFO1"
+  availability_topic: "tele/AZIMUT/LWT"
+  value_template: '{{ value_json.ATPRK }}'
+  payload_on: true
+  payload_off: false
+  payload_available: "Online"
+  payload_not_available: "Offline"
+  device_class: light
+
+  
+  
+  
