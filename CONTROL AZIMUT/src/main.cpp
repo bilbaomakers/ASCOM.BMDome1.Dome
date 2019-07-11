@@ -108,9 +108,13 @@ boolean SPIFFStatus = false;
 
 // Conexion UDP para la hora
 WiFiUDP UdpNtp;
+
 // Manejador del NTP. Cliente red, servidor, offset zona horaria, intervalo de actualizacion.
 // FALTA IMPLEMENTAR ALGO PARA CONFIGURAR LA ZONA HORARIA
 NTPClient ClienteNTP(UdpNtp, "europe.pool.ntp.org", HORA_LOCAL * 3600, 3600);
+
+// Para el sensor de temperatura de la CPU. Definir aqui asi necesario es por no estar en core Arduino.
+extern "C" {uint8_t temprature_sens_read();}
 
 #pragma endregion
 
@@ -439,7 +443,10 @@ String BMDomo1::MiEstadoJson(int categoria) {
 		jObj.set("ATPRK", AtPark);													// Propiedad AtPark
 		jObj.set("POS", ControladorStepper.currentPosition());  					// Posicion en pasos del objeto del Stepper
 		jObj.set("TOT", TotalPasos);												// Numero total de pasos por giro de la cupula
-		jObj.set("MAXT", ControladorStepper.maxexectime());							// Numero total de pasos por giro de la cupula
+		jObj.set("MAXT", ControladorStepper.maxexectime());							// Tiempo de ejecucion maxima del ciclo Stepper
+		jObj.set("RSSI", WiFi.RSSI());												// RSSI de la señal Wifi
+		jObj.set("HALL", hallRead());												// Campo magnetico en el MicroProcesador
+		jObj.set("ITEMP", (int)(temprature_sens_read() - 32) / 1.8);				// Temperatura de la CPU convertida a Celsius.
 
 		break;
 
