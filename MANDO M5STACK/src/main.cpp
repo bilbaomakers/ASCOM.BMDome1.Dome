@@ -31,7 +31,7 @@ Licencia: GNU General Public License v3.0 ( mas info en GitHub )
 #include <ButtonInfoBar.h>
 #include <StatusBar.h>
 #include <Button.h>
-#include <WidgetMosaic.h>
+#include <Widgetmosaic.h>
 #include <time.h>
 #include <sys/time.h>
 #include <AppScreen.h>
@@ -48,22 +48,7 @@ Licencia: GNU General Public License v3.0 ( mas info en GitHub )
 #include <SPIFFS.h>						// Libreria para sistema de ficheros SPIFFS
 #include <NTPClient.h>					// Para la gestion de la hora por NTP
 #include <WiFiUdp.h>					// Para la conexion UDP con los servidores de hora.
-
-using namespace Codingfield::UI;
-AppScreen* screen;
-StatusBar* topBar;
-ButtonInfoBar* bottomBar;
-Codingfield::UI::Button* BotonMQTT;
-Codingfield::UI::Button* BotonRSSI;
-Codingfield::UI::UpDownButton* BotonAZ;
-Codingfield::UI::Button* BotonInitHW;
-Codingfield::UI::Button* BotonSTOP;
-Codingfield::UI::Button* BotonPARK;
-WidgetMosaic* mosaic;
-Widget* focus;
-
-int32_t editButtonValue = 0;
-int32_t editOldButtonValue = 0;
+#include "Logo_Arranque.h"				// La imagen de inicio
 
 #pragma endregion
 
@@ -110,6 +95,24 @@ NTPClient ClienteNTP(UdpNtp, "europe.pool.ntp.org", HORA_LOCAL * 3600, 3600);
 
 // Para el sensor de temperatura de la CPU. Definir aqui asi necesario es por no estar en core Arduino.
 extern "C" {uint8_t temprature_sens_read();}
+
+// Para el Interfaz de Usuario
+using namespace Codingfield::UI;
+AppScreen* screen;
+//StatusBar* topBar;
+StatusBar* topBar;
+ButtonInfoBar* bottomBar;
+Codingfield::UI::Button* BotonMQTT;
+Codingfield::UI::Button* BotonShutter;
+Codingfield::UI::UpDownButton* BotonAZ;
+Codingfield::UI::Button* BotonInitHW;
+Codingfield::UI::Button* BotonSTOP;
+Codingfield::UI::Button* BotonPARK;
+WidgetMosaic* mosaicoarranque;
+Widget* focus;
+
+int32_t editButtonValue = 0;
+int32_t editOldButtonValue = 0;
 
 #pragma endregion
 
@@ -521,6 +524,7 @@ void WiFiEventCallBack(WiFiEvent_t event) {
 void onMqttConnect(bool sessionPresent) {
 
 	Serial.println("Conexion MQTT: Conectado");
+	BotonMQTT->SetBackgroundColor(GREEN);
 	
 	bool susflag = false;
 	bool lwtflag = false;
@@ -571,6 +575,7 @@ void onMqttConnect(bool sessionPresent) {
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   
 	Serial.println("Conexion MQTT: Desconectado.");
+	BotonMQTT->SetBackgroundColor(RED);
 
 }
 
@@ -1012,10 +1017,9 @@ void TaskMandaTelemetria( void * parameter ){
 void TaskGUI( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 100;
+	const TickType_t xFrequency = 200;
 	xLastWakeTime = xTaskGetTickCount ();
 
-	// Para el GUI, ya lo movere a algun sitio
 	std::vector<StatusBar::WifiStatuses> wifiStatus {StatusBar::WifiStatuses::No_signal,
                                                  StatusBar::WifiStatuses::Weak,
                                                  StatusBar::WifiStatuses::Medium,
@@ -1027,26 +1031,29 @@ void TaskGUI( void * parameter ){
 	while(true){
 
 		
-
+		/*
 		if (ClienteMQTT.connected()){
 
-			BotonMQTT->SetText("OK");
+			BotonMQTT->SetBackgroundColor(GREEN);
 		}
 		else{
 
-			BotonMQTT->SetText("FALLO");
+			BotonMQTT->SetBackgroundColor(RED);
 
 		}
+		 */
    		
-   		BotonRSSI->SetText("RSSI");
-
+   		
    		uptimeHours = millis() / (60*60000);
    		topBar->SetUptime(uptimeHours);
+		
+   		//char strftime_buf[64];
+   		//snprintf(strftime_buf, 64, "%02d:%02d:%02d", 12, 14, 59);
+   		//topBar->SetDateTime(strftime_buf);
+		
+		topBar->SetDateTime(ClienteNTP.getFormattedTime().c_str());
+		
 
-   		char strftime_buf[64];
-   		snprintf(strftime_buf, 64, "%02d:%02d:%02d", 12, 14, 59);
-   		topBar->SetDateTime(strftime_buf);
-   		
    		auto rssi =WiFi.RSSI();
    		if(rssi >= -55) {
    			topBar->SetWifiStatus(StatusBar::WifiStatuses::Full);
@@ -1103,57 +1110,6 @@ void TaskGUI( void * parameter ){
 	
 }
 
-// Funcion de manejo del Timer con soporte para unidad de coma flotante
-/*
-uint32_t cp0_regs[18];
-
-void IRAM_ATTR timer_isr() {
-
-	// Para que esta funcion no sea interrupida
-	portENTER_CRITICAL(&timerMux);
-
-	 // get FPU state
-  	uint32_t cp_state = xthal_get_cpenable();
-  
-  	if(cp_state) {
-    	
-		// Salvar los registros actuales de la FPU si hay
-    	xthal_save_cp0(cp0_regs);
-
-  	} 
-	
-	else {
-    	
-		// Habilitar la FPU
-    	xthal_set_cpenable(1);
-
-  	}
-	
-  
-	// Aqui podemos hacer la cosa que queramos que haga el timer.
-	
-	
-
- 	if(cp_state) {
-    	
-		// restaurar los registros de la FPU
-    	xthal_restore_cp0(cp0_regs);
-
-  	} 
-	
-	else {
-    
-		// Apagar la FPU
-    	xthal_set_cpenable(0);
-
-  	}
-
-	// Deshabilitar el modo no interrupcion
-	portEXIT_CRITICAL(&timerMux);
-
-}
-
- */
 
 #pragma endregion
 
@@ -1178,60 +1134,64 @@ void setup() {
 	M5.Lcd.fillScreen(BLACK);
   	M5.Lcd.setCursor(10, 10);
   	M5.Lcd.setTextColor(WHITE);
- 	M5.Lcd.setTextSize(3);
+ 	M5.Lcd.setTextSize(2);
 	M5.Lcd.printf("INICIANDO SISTEMA");
 	delay(2000);
+	M5.Lcd.pushImage(0,0,320,240,image_data_Logo_Arranque);
+	delay(10000);
+	
 	
 	// Configuracion del GUI
 	// Instanciate and configure all widgets
   	topBar = new StatusBar();
   	bottomBar = new ButtonInfoBar();
-  	mosaic = new WidgetMosaic(3, 2);
-  	screen = new AppScreen(Size(320, 240), BLACK, topBar, bottomBar, mosaic);
-
+  	mosaicoarranque = new WidgetMosaic(3, 3);
+  	screen = new AppScreen(Size(320, 240), BLACK, topBar, bottomBar, mosaicoarranque);
+	
   	// Give the focus to the main screen
   	focus = screen;
-
-  	BotonMQTT = new Codingfield::UI::Button(mosaic);
+	
+  	BotonMQTT = new Codingfield::UI::Button(mosaicoarranque);
   	BotonMQTT->SetBackgroundColor(RED);
   	BotonMQTT->SetTextColor(WHITE);
   	BotonMQTT->SetTitle("MQTT");
-	
-  	BotonRSSI = new Codingfield::UI::Button(mosaic);
-  	BotonRSSI->SetBackgroundColor(ORANGE);
-  	BotonRSSI->SetTextColor(BLACK);
-  	BotonRSSI->SetText("50%");
 
-  	BotonAZ = new Codingfield::UI::UpDownButton(mosaic); // Up/Down button
-  	BotonAZ->SetBackgroundColor(GREEN);
-  	BotonAZ->SetTextColor(BLACK);
+	BotonAZ = new Codingfield::UI::UpDownButton(mosaicoarranque); // Up/Down button
+  	BotonAZ->SetBackgroundColor(BLUE);
+  	BotonAZ->SetTextColor(WHITE);
   	BotonAZ->SetText("0");
+	BotonAZ->SetTitle("AZIMUT");
+	
+	BotonInitHW = new Codingfield::UI::Button(mosaicoarranque);
+  	BotonInitHW->SetBackgroundColor(RED);
+  	BotonInitHW->SetTextColor(WHITE);
+  	BotonInitHW->SetTitle("INIT");
+	
+  	BotonShutter = new Codingfield::UI::Button(mosaicoarranque);
+  	BotonShutter->SetBackgroundColor(ORANGE);
+  	BotonShutter->SetTextColor(WHITE);
+  	BotonShutter->SetTitle("SHUTTER");
+  	
+  	BotonSTOP = new Codingfield::UI::Button(mosaicoarranque);
+  	BotonSTOP->SetBackgroundColor(RED);
+  	BotonSTOP->SetTextColor(WHITE);
+  	BotonSTOP->SetTitle("STOP");
 
-  	BotonInitHW = new Codingfield::UI::Button(mosaic);
-  	BotonInitHW->SetBackgroundColor(TFT_GREEN);
-  	BotonInitHW->SetTextColor(TFT_BLACK);
-  	BotonInitHW->SetText("INIT");
-
-  	BotonSTOP = new Codingfield::UI::Button(mosaic);
-  	BotonSTOP->SetBackgroundColor(GREEN);
-  	BotonSTOP->SetTextColor(TFT_RED);
-  	BotonSTOP->SetText("STOP");
-
-  	BotonPARK = new Codingfield::UI::Button(mosaic);
-  	BotonPARK->SetBackgroundColor(GREEN);
-  	BotonPARK->SetTextColor(TFT_BLACK);
-  	BotonPARK->SetText("PARK");
+  	BotonPARK = new Codingfield::UI::Button(mosaicoarranque);
+  	BotonPARK->SetBackgroundColor(BLUE);
+  	BotonPARK->SetTextColor(WHITE);
+  	BotonPARK->SetTitle("PARK");
 
   	topBar->SetUptime(0);
   	topBar->SetWifiStatus(StatusBar::WifiStatuses::No_signal);
-
+		
   	bottomBar->SetButtonAText("<");
   	bottomBar->SetButtonBText("SELECT");
   	bottomBar->SetButtonCText(">");
 	
-  	// Callback called by the mosaic when it changes mode (mosaic/zoom on 1 widget)
+  	// Callback called by the mosaicoarranque when it changes mode (mosaicoarranque/zoom on 1 widget)
   	// We use it to update the bottom bar.
-  	mosaic->SetZoomOnSelectedCallback([](Widget* widget, bool edit) {
+  	mosaicoarranque->SetZoomOnSelectedCallback([](Widget* widget, bool edit) {
 	
 		if(edit) {
       		if(widget->IsEditable()){
@@ -1284,10 +1244,8 @@ void setup() {
   	});
 
   	// Draw the screen and all its children
-  	screen->Draw();
+  	//screen->Draw();
 	//}
-
-	delay(6000);
 
 	
 	// Asignar funciones Callback
