@@ -1,0 +1,50 @@
+{
+    "name": "SerialCommands", 
+    "version": "1.1", 
+    "keywords": [
+        "data", 
+        "processing"
+    ], 
+    "description": "An Arduino library to tokenize and parse commands received over a serial port.", 
+    "frameworks": [
+        "arduino"
+    ], 
+    "platforms": [
+        "atmelavr", 
+        "atmelsam", 
+        "espressif32", 
+        "espressif8266", 
+        "intel_arc32", 
+        "microchippic32", 
+        "nordicnrf51", 
+        "nordicnrf52", 
+        "ststm32", 
+        "teensy", 
+        "timsp430"
+    ], 
+    "authors": [
+        {
+            "email": "tiago.private@gmail.com", 
+            "url": null, 
+            "maintainer": true, 
+            "name": "Pedro Tiago Pereira"
+        }
+    ], 
+    "repository": {
+        "type": "git", 
+        "url": "https://github.com/ppedro74/Arduino-SerialCommands"
+    }, 
+    "homepage": null, 
+    "export": {
+        "include": null, 
+        "exclude": [
+            "extras", 
+            "docs", 
+            "tests", 
+            "test", 
+            "*.doxyfile", 
+            "*.pdf"
+        ]
+    }, 
+    "id": 1976
+}
