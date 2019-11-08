@@ -12,6 +12,7 @@ Implements:	 ASCOM Dome interface version: 6.4SP1
 Author:		 Diego Maroto - BilbaoMakers 2019 - info@bilbaomakers.org
 
 
+
 Cosas a hacer en el futuro
 
 - Implementar uno a varios Led WS2812 para informar del estado de lo importante
