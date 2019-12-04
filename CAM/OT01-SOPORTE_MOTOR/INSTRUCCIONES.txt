@@ -1,0 +1,3 @@
+1.- Planear la mesa con fresa de 6mm pasada 90%. Velocidad 2000. Programa hace una pasada de 1mm. Repetir bajando Z si hace falta
+
+2.- Mecanizados: Fresa 3mm pasada 70%. Cero Z arriba clavado para los vaciados. Verificar 0 en vaciados. Cortes pasan 0.3 abajo
