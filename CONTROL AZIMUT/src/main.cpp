@@ -133,7 +133,7 @@ class ConfigClass{
 		char mqttport[6];
 		char mqtttopic[33];
 		char mqttusuario[19];
-		char mqttpassword[19];
+		char mqttpassword[25];
 
 		String cmndTopic;
 		String statTopic;
@@ -1021,8 +1021,8 @@ void onMqttConnect(bool sessionPresent) {
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   
-	Serial.println("Conexion MQTT: Desconectado.");
-
+	Serial.println("Conexion MQTT: Desconectado");
+	
 }
 
 void onMqttSubscribe(uint16_t packetId, uint8_t qos) {
