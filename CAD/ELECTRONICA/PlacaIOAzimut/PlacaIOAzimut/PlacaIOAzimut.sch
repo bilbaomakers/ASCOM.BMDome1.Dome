@@ -1,0 +1,599 @@
+EESchema Schematic File Version 4
+EELAYER 30 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title ""
+Date ""
+Rev ""
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L Isolator:PC817 U1
+U 1 1 5E381B15
+P 2950 2000
+F 0 "U1" H 2950 2325 50  0000 C CNN
+F 1 "PC817" H 2950 2234 50  0000 C CNN
+F 2 "Package_DIP:DIP-4_W7.62mm" H 2750 1800 50  0001 L CIN
+F 3 "http://www.soselectronic.cz/a_info/resource/d/pc817.pdf" H 2950 2000 50  0001 L CNN
+	1    2950 2000
+	1    0    0    -1  
+$EndComp
+$Comp
+L Transistor_Array:ULN2003 U8
+U 1 1 5E381DA4
+P 8300 1550
+F 0 "U8" H 8300 2217 50  0000 C CNN
+F 1 "ULN2003" H 8300 2126 50  0000 C CNN
+F 2 "Package_DIP:DIP-16_W7.62mm_LongPads" H 8350 1000 50  0001 L CNN
+F 3 "http://www.ti.com/lit/ds/symlink/uln2003a.pdf" H 8400 1350 50  0001 C CNN
+	1    8300 1550
+	1    0    0    -1  
+$EndComp
+$Comp
+L Connector:Screw_Terminal_01x07 J2
+U 1 1 5E382498
+P 9450 1650
+F 0 "J2" H 9529 1642 50  0000 L CNN
+F 1 "PANEL" H 9529 1551 50  0000 L CNN
+F 2 "TerminalBlock_RND:TerminalBlock_RND_205-00050_1x07_P5.00mm_Horizontal" H 9450 1650 50  0001 C CNN
+F 3 "~" H 9450 1650 50  0001 C CNN
+	1    9450 1650
+	1    0    0    -1  
+$EndComp
+$Comp
+L Connector:Screw_Terminal_01x03 J3
+U 1 1 5E382587
+P 1150 1150
+F 0 "J3" H 1150 800 50  0000 C CNN
+F 1 "POWER SUPP" H 1150 900 50  0000 C CNN
+F 2 "TerminalBlock_RND:TerminalBlock_RND_205-00046_1x03_P5.00mm_Horizontal" H 1150 1150 50  0001 C CNN
+F 3 "~" H 1150 1150 50  0001 C CNN
+	1    1150 1150
+	-1   0    0    1   
+$EndComp
+$Comp
+L Connector:Screw_Terminal_01x04 J1
+U 1 1 5E382743
+P 9450 3200
+F 0 "J1" H 9530 3192 50  0000 L CNN
+F 1 "STEPPER DRV" H 9530 3101 50  0000 L CNN
+F 2 "TerminalBlock_RND:TerminalBlock_RND_205-00047_1x04_P5.00mm_Horizontal" H 9450 3200 50  0001 C CNN
+F 3 "~" H 9450 3200 50  0001 C CNN
+	1    9450 3200
+	1    0    0    -1  
+$EndComp
+$Comp
+L Connector:Screw_Terminal_01x06 J4
+U 1 1 5E382BB0
+P 1150 2200
+F 0 "J4" H 1150 1700 50  0000 C CNN
+F 1 "INPUTS" H 1150 1800 50  0000 C CNN
+F 2 "TerminalBlock_RND:TerminalBlock_RND_205-00049_1x06_P5.00mm_Horizontal" H 1150 2200 50  0001 C CNN
+F 3 "~" H 1150 2200 50  0001 C CNN
+	1    1150 2200
+	-1   0    0    1   
+$EndComp
+$Comp
+L Isolator:PC817 U2
+U 1 1 5E382DA7
+P 2950 2550
+F 0 "U2" H 2950 2875 50  0000 C CNN
+F 1 "PC817" H 2950 2784 50  0000 C CNN
+F 2 "Package_DIP:DIP-4_W7.62mm" H 2750 2350 50  0001 L CIN
+F 3 "http://www.soselectronic.cz/a_info/resource/d/pc817.pdf" H 2950 2550 50  0001 L CNN
+	1    2950 2550
+	1    0    0    -1  
+$EndComp
+$Comp
+L Isolator:PC817 U3
+U 1 1 5E382DDB
+P 2950 3100
+F 0 "U3" H 2950 3425 50  0000 C CNN
+F 1 "PC817" H 2950 3334 50  0000 C CNN
+F 2 "Package_DIP:DIP-4_W7.62mm" H 2750 2900 50  0001 L CIN
+F 3 "http://www.soselectronic.cz/a_info/resource/d/pc817.pdf" H 2950 3100 50  0001 L CNN
+	1    2950 3100
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:GND #PWR0101
+U 1 1 5E3830F6
+P 1900 1350
+F 0 "#PWR0101" H 1900 1100 50  0001 C CNN
+F 1 "GND" H 1905 1177 50  0000 C CNN
+F 2 "" H 1900 1350 50  0001 C CNN
+F 3 "" H 1900 1350 50  0001 C CNN
+	1    1900 1350
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:+12V #PWR0102
+U 1 1 5E383137
+P 1900 850
+F 0 "#PWR0102" H 1900 700 50  0001 C CNN
+F 1 "+12V" H 1915 1023 50  0000 C CNN
+F 2 "" H 1900 850 50  0001 C CNN
+F 3 "" H 1900 850 50  0001 C CNN
+	1    1900 850 
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:+5V #PWR0103
+U 1 1 5E383178
+P 2150 850
+F 0 "#PWR0103" H 2150 700 50  0001 C CNN
+F 1 "+5V" H 2165 1023 50  0000 C CNN
+F 2 "" H 2150 850 50  0001 C CNN
+F 3 "" H 2150 850 50  0001 C CNN
+	1    2150 850 
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	1900 1050 1900 850 
+Wire Wire Line
+	1350 1250 2150 1250
+Wire Wire Line
+	2150 1250 2150 850 
+Wire Wire Line
+	1350 1150 1900 1150
+Wire Wire Line
+	1900 1150 1900 1350
+$Comp
+L power:+12V #PWR0104
+U 1 1 5E3831EB
+P 8800 850
+F 0 "#PWR0104" H 8800 700 50  0001 C CNN
+F 1 "+12V" H 8815 1023 50  0000 C CNN
+F 2 "" H 8800 850 50  0001 C CNN
+F 3 "" H 8800 850 50  0001 C CNN
+	1    8800 850 
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	8700 1150 8800 1150
+Wire Wire Line
+	8800 1150 8800 850 
+$Comp
+L power:GND #PWR0105
+U 1 1 5E383256
+P 8900 4250
+F 0 "#PWR0105" H 8900 4000 50  0001 C CNN
+F 1 "GND" H 8905 4077 50  0000 C CNN
+F 2 "" H 8900 4250 50  0001 C CNN
+F 3 "" H 8900 4250 50  0001 C CNN
+	1    8900 4250
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	8300 2150 8300 2350
+Wire Wire Line
+	8300 2350 8900 2350
+Wire Wire Line
+	8900 2350 8900 3400
+$Comp
+L power:GND #PWR0106
+U 1 1 5E383317
+P 3500 5300
+F 0 "#PWR0106" H 3500 5050 50  0001 C CNN
+F 1 "GND" H 3505 5127 50  0000 C CNN
+F 2 "" H 3500 5300 50  0001 C CNN
+F 3 "" H 3500 5300 50  0001 C CNN
+	1    3500 5300
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	3250 2100 3500 2100
+Wire Wire Line
+	3500 2100 3500 2650
+Wire Wire Line
+	3250 2650 3500 2650
+Connection ~ 3500 2650
+Wire Wire Line
+	3500 2650 3500 3100
+Wire Wire Line
+	3250 3200 3500 3200
+Connection ~ 3500 3200
+Wire Wire Line
+	3500 3200 3500 3800
+$Comp
+L power:GND #PWR0107
+U 1 1 5E3835FA
+P 2450 5300
+F 0 "#PWR0107" H 2450 5050 50  0001 C CNN
+F 1 "GND" H 2455 5127 50  0000 C CNN
+F 2 "" H 2450 5300 50  0001 C CNN
+F 3 "" H 2450 5300 50  0001 C CNN
+	1    2450 5300
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	2650 2100 2450 2100
+Wire Wire Line
+	2450 2100 2450 2650
+Wire Wire Line
+	2650 2650 2450 2650
+Connection ~ 2450 2650
+Wire Wire Line
+	2450 2650 2450 3200
+Wire Wire Line
+	2650 3200 2450 3200
+Connection ~ 2450 3200
+Wire Wire Line
+	2450 3200 2450 3800
+$Comp
+L Device:R R1
+U 1 1 5E3844BE
+P 2200 1900
+F 0 "R1" V 1993 1900 50  0000 C CNN
+F 1 "1K" V 2084 1900 50  0000 C CNN
+F 2 "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" V 2130 1900 50  0001 C CNN
+F 3 "~" H 2200 1900 50  0001 C CNN
+	1    2200 1900
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:R R2
+U 1 1 5E384567
+P 2200 2450
+F 0 "R2" V 1993 2450 50  0000 C CNN
+F 1 "1K" V 2084 2450 50  0000 C CNN
+F 2 "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" V 2130 2450 50  0001 C CNN
+F 3 "~" H 2200 2450 50  0001 C CNN
+	1    2200 2450
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:R R3
+U 1 1 5E3845D1
+P 2200 3000
+F 0 "R3" V 1993 3000 50  0000 C CNN
+F 1 "1K" V 2084 3000 50  0000 C CNN
+F 2 "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" V 2130 3000 50  0001 C CNN
+F 3 "~" H 2200 3000 50  0001 C CNN
+	1    2200 3000
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	2350 1900 2650 1900
+Wire Wire Line
+	2350 2450 2650 2450
+Wire Wire Line
+	2350 3000 2650 3000
+Wire Wire Line
+	1350 1900 2050 1900
+Wire Wire Line
+	1350 2000 1950 2000
+Wire Wire Line
+	1950 2000 1950 2450
+Wire Wire Line
+	1950 2450 2050 2450
+Wire Wire Line
+	1350 2100 1850 2100
+Wire Wire Line
+	1850 2100 1850 3000
+Wire Wire Line
+	1850 3000 2050 3000
+Wire Wire Line
+	9250 3400 8900 3400
+Connection ~ 8900 3400
+Wire Wire Line
+	8900 3400 8900 4250
+$Comp
+L ESP32-DEVKITC:ESP32-DEVKITC U7
+U 1 1 5E39277E
+P 6000 2700
+F 0 "U7" H 6000 3867 50  0000 C CNN
+F 1 "ESP32-DEVKITC" H 6000 3776 50  0000 C CNN
+F 2 "ESP32-DEVKITC:MODULE_ESP32-DEVKITC" H 6000 2700 50  0001 L BNN
+F 3 "None" H 6000 2700 50  0001 L BNN
+F 4 "ESP32-DEVKITC-32D-F" H 6000 2700 50  0001 L BNN "Campo4"
+F 5 "EVAL BOARD FOR ESP-WROOM-32" H 6000 2700 50  0001 L BNN "Campo5"
+F 6 "Espressif Systems" H 6000 2700 50  0001 L BNN "Campo6"
+F 7 "None" H 6000 2700 50  0001 L BNN "Campo7"
+F 8 "Unavailable" H 6000 2700 50  0001 L BNN "Campo8"
+	1    6000 2700
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	2150 1250 4600 1250
+Wire Wire Line
+	4600 1250 4600 3600
+Wire Wire Line
+	4600 3600 5200 3600
+Connection ~ 2150 1250
+$Comp
+L power:+3V3 #PWR0109
+U 1 1 5E397DF3
+P 2400 850
+F 0 "#PWR0109" H 2400 700 50  0001 C CNN
+F 1 "+3V3" H 2415 1023 50  0000 C CNN
+F 2 "" H 2400 850 50  0001 C CNN
+F 3 "" H 2400 850 50  0001 C CNN
+	1    2400 850 
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	4700 1800 5200 1800
+Wire Wire Line
+	6800 1900 6900 1900
+Wire Wire Line
+	6900 1900 6900 1350
+Wire Wire Line
+	6900 1350 7900 1350
+Wire Wire Line
+	6800 2000 7000 2000
+Wire Wire Line
+	7000 2000 7000 1450
+Wire Wire Line
+	7000 1450 7900 1450
+Wire Wire Line
+	6800 2300 7100 2300
+Wire Wire Line
+	7100 2300 7100 1550
+Wire Wire Line
+	7100 1550 7900 1550
+Wire Wire Line
+	6800 2500 7200 2500
+Wire Wire Line
+	7200 2500 7200 1650
+Wire Wire Line
+	7200 1650 7900 1650
+Wire Wire Line
+	6800 2700 7300 2700
+Wire Wire Line
+	7300 2700 7300 1750
+Wire Wire Line
+	7300 1750 7900 1750
+Wire Wire Line
+	6800 2800 7400 2800
+Wire Wire Line
+	7400 2800 7400 1850
+Wire Wire Line
+	7400 1850 7900 1850
+Wire Wire Line
+	6800 2900 7500 2900
+Wire Wire Line
+	7500 2900 7500 1950
+Wire Wire Line
+	7500 1950 7900 1950
+Wire Wire Line
+	8700 1350 9250 1350
+Wire Wire Line
+	8700 1450 9250 1450
+Wire Wire Line
+	8700 1550 9250 1550
+Wire Wire Line
+	8700 1650 9250 1650
+Wire Wire Line
+	8700 1750 9250 1750
+Wire Wire Line
+	8700 1850 9250 1850
+Wire Wire Line
+	8700 1950 9250 1950
+NoConn ~ 5200 1900
+NoConn ~ 5200 2000
+NoConn ~ 5200 2100
+NoConn ~ 5200 2200
+NoConn ~ 5200 3300
+NoConn ~ 5200 3400
+NoConn ~ 5200 3500
+NoConn ~ 6800 3600
+NoConn ~ 6800 3500
+NoConn ~ 6800 3400
+NoConn ~ 6800 3200
+NoConn ~ 6800 3100
+NoConn ~ 6800 3000
+NoConn ~ 6800 2600
+NoConn ~ 6800 2400
+NoConn ~ 6800 2200
+NoConn ~ 6800 2100
+NoConn ~ 6800 1800
+Wire Wire Line
+	4700 1800 4700 1150
+Wire Wire Line
+	4700 1150 2400 1150
+Wire Wire Line
+	2400 1150 2400 850 
+Wire Wire Line
+	5200 2600 4900 2600
+Wire Wire Line
+	4900 2600 4900 3850
+Wire Wire Line
+	4900 3850 8150 3850
+Wire Wire Line
+	8150 3850 8150 3100
+Wire Wire Line
+	8150 3100 9250 3100
+Wire Wire Line
+	5200 2500 4800 2500
+Wire Wire Line
+	4800 2500 4800 3950
+Wire Wire Line
+	4800 3950 8250 3950
+Wire Wire Line
+	8250 3950 8250 3200
+Wire Wire Line
+	8250 3200 9250 3200
+Wire Wire Line
+	5200 2400 4700 2400
+Wire Wire Line
+	4700 2400 4700 4050
+Wire Wire Line
+	4700 4050 8350 4050
+Wire Wire Line
+	8350 4050 8350 3300
+Wire Wire Line
+	8350 3300 9250 3300
+Wire Wire Line
+	5200 3100 3500 3100
+Connection ~ 3500 3100
+Wire Wire Line
+	3500 3100 3500 3200
+$Comp
+L Isolator:PC817 U4
+U 1 1 5E4C55C3
+P 2950 3700
+F 0 "U4" H 2950 4025 50  0000 C CNN
+F 1 "PC817" H 2950 3934 50  0000 C CNN
+F 2 "Package_DIP:DIP-4_W7.62mm" H 2750 3500 50  0001 L CIN
+F 3 "http://www.soselectronic.cz/a_info/resource/d/pc817.pdf" H 2950 3700 50  0001 L CNN
+	1    2950 3700
+	1    0    0    -1  
+$EndComp
+$Comp
+L Isolator:PC817 U5
+U 1 1 5E4C6394
+P 2950 4300
+F 0 "U5" H 2950 4625 50  0000 C CNN
+F 1 "PC817" H 2950 4534 50  0000 C CNN
+F 2 "Package_DIP:DIP-4_W7.62mm" H 2750 4100 50  0001 L CIN
+F 3 "http://www.soselectronic.cz/a_info/resource/d/pc817.pdf" H 2950 4300 50  0001 L CNN
+	1    2950 4300
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	1350 1050 1900 1050
+$Comp
+L Device:R R4
+U 1 1 5E4CD230
+P 2200 3600
+F 0 "R4" V 1993 3600 50  0000 C CNN
+F 1 "1K" V 2084 3600 50  0000 C CNN
+F 2 "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" V 2130 3600 50  0001 C CNN
+F 3 "~" H 2200 3600 50  0001 C CNN
+	1    2200 3600
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:R R5
+U 1 1 5E4CD52A
+P 2200 4200
+F 0 "R5" V 1993 4200 50  0000 C CNN
+F 1 "1K" V 2084 4200 50  0000 C CNN
+F 2 "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" V 2130 4200 50  0001 C CNN
+F 3 "~" H 2200 4200 50  0001 C CNN
+	1    2200 4200
+	0    1    1    0   
+$EndComp
+$Comp
+L Isolator:PC817 U6
+U 1 1 5E4E6E43
+P 2950 4900
+F 0 "U6" H 2950 5225 50  0000 C CNN
+F 1 "PC817" H 2950 5134 50  0000 C CNN
+F 2 "Package_DIP:DIP-4_W7.62mm" H 2750 4700 50  0001 L CIN
+F 3 "http://www.soselectronic.cz/a_info/resource/d/pc817.pdf" H 2950 4900 50  0001 L CNN
+	1    2950 4900
+	1    0    0    -1  
+$EndComp
+$Comp
+L Device:R R6
+U 1 1 5E4ED837
+P 2200 4800
+F 0 "R6" V 1993 4800 50  0000 C CNN
+F 1 "1K" V 2084 4800 50  0000 C CNN
+F 2 "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal" V 2130 4800 50  0001 C CNN
+F 3 "~" H 2200 4800 50  0001 C CNN
+	1    2200 4800
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	2350 3600 2650 3600
+Wire Wire Line
+	2350 4200 2650 4200
+Wire Wire Line
+	2350 4800 2650 4800
+Wire Wire Line
+	2050 3600 1750 3600
+Wire Wire Line
+	1750 3600 1750 2200
+Wire Wire Line
+	1750 2200 1350 2200
+Wire Wire Line
+	2050 4200 1650 4200
+Wire Wire Line
+	1650 4200 1650 2300
+Wire Wire Line
+	1650 2300 1350 2300
+Wire Wire Line
+	2050 4800 1550 4800
+Wire Wire Line
+	1550 4800 1550 2400
+Wire Wire Line
+	1550 2400 1350 2400
+Wire Wire Line
+	3250 3800 3500 3800
+Connection ~ 3500 3800
+Wire Wire Line
+	3500 3800 3500 4400
+Wire Wire Line
+	3250 4400 3500 4400
+Connection ~ 3500 4400
+Wire Wire Line
+	3500 4400 3500 5000
+Wire Wire Line
+	3250 5000 3500 5000
+Connection ~ 3500 5000
+Wire Wire Line
+	3500 5000 3500 5300
+Wire Wire Line
+	2650 5000 2450 5000
+Connection ~ 2450 5000
+Wire Wire Line
+	2450 5000 2450 5300
+Wire Wire Line
+	2650 4400 2450 4400
+Connection ~ 2450 4400
+Wire Wire Line
+	2450 4400 2450 5000
+Wire Wire Line
+	2650 3800 2450 3800
+Connection ~ 2450 3800
+Wire Wire Line
+	2450 3800 2450 4400
+NoConn ~ 5200 2300
+Text Notes 4900 1100 0    50   ~ 0
+IO0 - Si lo pones a Low en el arranque entra en modo flash\nIO2 - No poner a UP en el arranque\nIO6 a 11 - No se pueden usar. Es la Flash\nIO12 - No poner a UP en el arranque\nIO15 - Se puede usar pero si esta a LOW en arranque no hay salida debug\nIO34 a 39 - No tienen pullups Internas
+Wire Wire Line
+	6800 3300 6900 3300
+Wire Wire Line
+	6900 3300 6900 4800
+Wire Wire Line
+	6900 4800 3250 4800
+Wire Wire Line
+	5200 3200 4500 3200
+Wire Wire Line
+	4500 3200 4500 4200
+Wire Wire Line
+	4500 4200 3250 4200
+Wire Wire Line
+	5200 3000 4400 3000
+Wire Wire Line
+	4400 3000 4400 3600
+Wire Wire Line
+	4400 3600 3250 3600
+Wire Wire Line
+	5200 2900 4150 2900
+Wire Wire Line
+	4150 2900 4150 3000
+Wire Wire Line
+	4150 3000 3250 3000
+Wire Wire Line
+	5200 2800 3700 2800
+Wire Wire Line
+	3700 2800 3700 2450
+Wire Wire Line
+	3700 2450 3250 2450
+Wire Wire Line
+	5200 2700 3800 2700
+Wire Wire Line
+	3800 2700 3800 1900
+Wire Wire Line
+	3800 1900 3250 1900
+$EndSCHEMATC
