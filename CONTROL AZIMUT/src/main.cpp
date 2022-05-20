@@ -55,6 +55,7 @@ NOTAS SOBRE EL STEPPER Y LA LIBRERIA ACCELSTEPPER
 #include <SPIFFS.h>						// Libreria para sistema de ficheros SPIFFS
 #include <NTPClient.h>					// Para la gestion de la hora por NTP
 #include <WiFiUdp.h>					// Para la conexion UDP con los servidores de hora.
+#include <CuadroMando.h>				// Mi libreria para objetos LED
 
 #pragma endregion
 
@@ -75,8 +76,22 @@ static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 981;	// Numero de diente
 static const boolean MECANICA_STEPPER_INVERTPINS = false;			// Invertir la logica de los pines de control (pulso 1 o pulso 0)
 static const int MECANICA_STEPPER_ANCHO_PULSO = 10;						// Ancho de los pulsos
 
-// Otros sensores
+// Entradas
+static const uint8_t MECANICA_BOTONPANEL1 = 15;
+static const uint8_t MECANICA_BOTONPANEL2 = 13;
+static const uint8_t MECANICA_BOTONPANEL3 = 12;
+static const uint8_t MECANICA_BOTONPANEL4 = 14;
+static const uint8_t MECANICA_EMERGENCY_STOP = 27;
 static const uint8_t MECANICA_SENSOR_HOME = 26;								// Pin para el sensor de HOME
+
+// Salidas
+static const uint8_t MECANICA_LEDROJO = 23;
+static const uint8_t MECANICA_LEDVERDE = 22;
+static const uint8_t MECANICA_LEDAZUL = 21;
+static const uint8_t MECANICA_SALIDA4 = 19;
+static const uint8_t MECANICA_SALIDA5 = 5;
+static const uint8_t MECANICA_SALIDA6 = 17;
+static const uint8_t MECANICA_SALIDA7 = 16;
 
 // Para el ticker del BMDomo1
 unsigned long TIEMPO_TICKER_RAPIDO = 500;
@@ -84,38 +99,45 @@ unsigned long TIEMPO_TICKER_RAPIDO = 500;
 // Para la zona horaria (horas de diferencia con UTC)
 static const int HORA_LOCAL = 2;
 
+// PARA MODO INSTALADOR. Para que la cupula tenga la funcionalidad reducida lo justo para el instalador
+static const boolean MODO_INSTALADOR = true;
+
+
 #pragma endregion
 
 #pragma region Objetos
 
 // Para la conexion MQTT
-AsyncMqttClient  ClienteMQTT;
+AsyncMqttClient  clienteMqtt;
 
 // Controlador Stepper
-AccelStepper ControladorStepper;
+AccelStepper controladorStepper;
 
 // Los manejadores para las tareas. El resto de las cosas que hace nuestro controlador que son un poco mas flexibles que la de los pulsos del Stepper
-TaskHandle_t THandleTaskCupulaRun,THandleTaskProcesaComandos,THandleTaskComandosSerieRun,THandleTaskMandaTelemetria,THandleTaskGestionRed,THandleTaskEnviaRespuestas;	
+TaskHandle_t tHandleTaskCupulaRun,tHandleTaskProcesaComandos,tHandleTaskComandosSerieRun,tHandleTaskMandaTelemetria,tHandleTaskGestionRed,tHandleTaskEnviaRespuestas, tHandleTaskGestionCuadro;	
 
 // Manejadores Colas para comunicaciones inter-tareas
-QueueHandle_t ColaComandos,ColaRespuestas;
+QueueHandle_t colaComandos,colaRespuestas;
 
 // Timer Stepper Run
 hw_timer_t * timer_stp = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 // Flag para el estado del sistema de ficheros
-boolean SPIFFStatus = false;
+boolean spiffStatus = false;
 
 // Conexion UDP para la hora
-WiFiUDP UdpNtp;
+WiFiUDP udpNtp;
 
 // Manejador del NTP. Cliente red, servidor, offset zona horaria, intervalo de actualizacion.
 // FALTA IMPLEMENTAR ALGO PARA CONFIGURAR LA ZONA HORARIA
-NTPClient ClienteNTP(UdpNtp, "europe.pool.ntp.org", HORA_LOCAL * 3600, 3600);
+NTPClient clienteNTP(udpNtp, "europe.pool.ntp.org", HORA_LOCAL * 3600, 3600);
 
 // Para el sensor de temperatura de la CPU. Definir aqui asi necesario es por no estar en core Arduino.
 extern "C" {uint8_t temprature_sens_read();}
+
+// Cuado Mando
+CuadroMando miCuadroMando(MECANICA_BOTONPANEL1, MECANICA_BOTONPANEL2, MECANICA_BOTONPANEL3, MECANICA_BOTONPANEL4, MECANICA_EMERGENCY_STOP, MECANICA_SENSOR_HOME, MECANICA_LEDROJO, MECANICA_LEDVERDE, MECANICA_LEDAZUL, MECANICA_SALIDA4, MECANICA_SALIDA5, MECANICA_SALIDA6, MECANICA_SALIDA7);
 
 #pragma endregion
 
@@ -433,7 +455,7 @@ String BMDomo1::MiEstadoJson(int categoria) {
 	case 1:
 
 		// Esto llena de objetos de tipo "pareja propiedad valor"
-		jObj.set("TIME", ClienteNTP.getFormattedTime());							// HORA
+		jObj.set("TIME", clienteNTP.getFormattedTime());							// HORA
 		jObj.set("HI", HardwareInfo);												// Info del Hardware
 		jObj.set("CS", ComOK);														// Info de la conexion WIFI y MQTT
 		jObj.set("DS", DriverOK);													// Info de la comunicacion con el DRIVER ASCOM (o quiza la cambiemos para comunicacion con "cualquier" driver, incluido uno nuestro
@@ -442,9 +464,9 @@ String BMDomo1::MiEstadoJson(int categoria) {
 		jObj.set("ATH", AtHome); 													// Propiedad AtHome
 		jObj.set("PRK", ParkPos);													// Posicion almacenada de Park
 		jObj.set("ATPRK", AtPark);													// Propiedad AtPark
-		jObj.set("POS", ControladorStepper.currentPosition());  					// Posicion en pasos del objeto del Stepper
+		jObj.set("POS", controladorStepper.currentPosition());  					// Posicion en pasos del objeto del Stepper
 		jObj.set("TOT", TotalPasos);												// Numero total de pasos por giro de la cupula
-		jObj.set("MAXT", ControladorStepper.maxexectime());							// Tiempo de ejecucion maxima del ciclo Stepper
+		jObj.set("MAXT", controladorStepper.maxexectime());							// Tiempo de ejecucion maxima del ciclo Stepper
 		jObj.set("RSSI", WiFi.RSSI());												// RSSI de la señal Wifi
 		jObj.set("HALL", hallRead());												// Campo magnetico en el MicroProcesador
 		jObj.set("ITEMP", (int)(temprature_sens_read() - 32) / 1.8);				// Temperatura de la CPU convertida a Celsius.
@@ -484,7 +506,7 @@ void BMDomo1::IniciaCupula(String parametros) {
 
 		HardwareOK = true;
 		MiRespondeComandos("InitHW", "READY");
-		ControladorStepper.enableOutputs();
+		controladorStepper.enableOutputs();
 		
 	}
 
@@ -494,10 +516,10 @@ void BMDomo1::IniciaCupula(String parametros) {
 		Inicializando = true;
 
 		// Activar el motor. el resto del objeto Stepper ya esta OK
-		ControladorStepper.enableOutputs();
+		controladorStepper.enableOutputs();
 
 		// Como el metodo ahora mismo es dar toda la vuelta, hago cero. Si cambio el metodo esto no valdria.
-		ControladorStepper.setCurrentPosition(0);
+		controladorStepper.setCurrentPosition(0);
 
 		// Busca Home (Asyncrono)
 		FindHome();
@@ -563,7 +585,7 @@ long BMDomo1::GetCurrentAzimut() {
 
 	// Si los pasòs totales del stepper son mas o igual de los maximos (mas de 360º) restamos una vuelta. Luego en el loop cuando estemos parados corregiremos el valor de la libreria stepper
 	
-	long t_pasos = ControladorStepper.currentPosition();
+	long t_pasos = controladorStepper.currentPosition();
 	if ( t_pasos < TotalPasos && t_pasos >= 0 ) {
 
 		return PasosToGrados(t_pasos);
@@ -646,7 +668,7 @@ void BMDomo1::MoveTo(int grados) {
 			
 			MiRespondeComandos("SlewToAZimut", "CMD_OK");
 			
-			ControladorStepper.move(GradosToPasos(amover));
+			controladorStepper.move(GradosToPasos(amover));
 				
 
 
@@ -689,13 +711,13 @@ void BMDomo1::AbortSlew(){
 	MiRespondeComandos("AbortSlew", "CMD_OK");
 
 	// Parar Stepper de Azimut (se para con aceleracion no a lo burro)
-	ControladorStepper.stop();
+	controladorStepper.stop();
 
 	// Esperar 5 segundos a que se pare el tema y si no error
 	int TiempoEspera;
 	for (TiempoEspera = 0; TiempoEspera < 5; TiempoEspera++){
 
-		if (ControladorStepper.isRunning() == false){
+		if (controladorStepper.isRunning() == false){
 
 			// Por si hemos parado estando aparcando o buscando casa
 			Aparcando = false;
@@ -750,7 +772,7 @@ void BMDomo1::Run() {
 	Debouncer_HomeSwitch.update();
 
 	// Una importante es actualizar la propiedad Slewing con el estado del motor paso a paso. 
-	Slewing = ControladorStepper.isRunning();
+	Slewing = controladorStepper.isRunning();
 
 	// Algunas cosas que hacemos en funcion si nos estamos moviendo o no
 
@@ -764,8 +786,8 @@ void BMDomo1::Run() {
 			// Pero es que ademas si esta pulsado, nos estamos moviendo y estamos "buscando casa" .....
 			if (BuscandoCasa) {
 
-				ControladorStepper.stop();					// Parar el motor que hemos llegado a HOME
-				ControladorStepper.setCurrentPosition(0);	// Poner la posicion a cero ("hacer cero")
+				controladorStepper.stop();					// Parar el motor que hemos llegado a HOME
+				controladorStepper.setCurrentPosition(0);	// Poner la posicion a cero ("hacer cero")
 
 				// Aqui como tenemos aceleraciones va a tardar en parar y nos vamos a pasar de home un cacho (afortunadamente un cacho conocido)
 				// Tendremos que volver para atras despacio el cacho que nos hemos pasado del Switch. Hay que hacer el calculo.
@@ -810,9 +832,9 @@ void BMDomo1::Run() {
 		
 
 		// Si la posicion del stepper en el objeto de su libreria esta fuera de rangos y estoy parado corregir
-		if (ControladorStepper.currentPosition() > TotalPasos || ControladorStepper.currentPosition() < 0) {
+		if (controladorStepper.currentPosition() > TotalPasos || controladorStepper.currentPosition() < 0) {
 
-			ControladorStepper.setCurrentPosition(GradosToPasos(GetCurrentAzimut()));
+			controladorStepper.setCurrentPosition(GradosToPasos(GetCurrentAzimut()));
 
 		}
 
@@ -939,11 +961,11 @@ void WiFiEventCallBack(WiFiEvent_t event) {
     	case SYSTEM_EVENT_STA_GOT_IP:
      	   	Serial.print("Conexion WiFi: Conetado. IP: ");
       	  	Serial.println(WiFi.localIP());
-			ClienteNTP.begin();
-			if (ClienteNTP.update()){
+			clienteNTP.begin();
+			if (clienteNTP.update()){
 
 				Serial.print("Reloj Actualizado via NTP: ");
-				Serial.println(ClienteNTP.getFormattedTime());
+				Serial.println(clienteNTP.getFormattedTime());
 				
 			}
 			else{
@@ -977,7 +999,7 @@ void onMqttConnect(bool sessionPresent) {
 
 	
 	// Suscribirse al topic de Entrada de Comandos
-	if (ClienteMQTT.subscribe(MiConfig.cmndTopic.c_str(), 2)) {
+	if (clienteMqtt.subscribe(MiConfig.cmndTopic.c_str(), 2)) {
 
 		// Si suscrito correctamente
 		Serial.println("Suscrito al topic " + MiConfig.cmndTopic);
@@ -990,7 +1012,7 @@ void onMqttConnect(bool sessionPresent) {
 
 	
 	// Publicar un Online en el LWT
-	if (ClienteMQTT.publish((MiConfig.teleTopic + "/LWT").c_str(), 2,true,"Online")){
+	if (clienteMqtt.publish((MiConfig.teleTopic + "/LWT").c_str(), 2,true,"Online")){
 
 		// Si llegamos hasta aqui es estado de las comunicaciones con WIFI y MQTT es OK
 		Serial.println("Publicado Online en Topic LWT: " + (MiConfig.teleTopic + "/LWT"));
@@ -1003,7 +1025,7 @@ void onMqttConnect(bool sessionPresent) {
 	if (!susflag || !lwtflag){
 
 		// Si falla la suscripcion o el envio del Online malo kaka. Me desconecto para repetir el proceso.
-		ClienteMQTT.disconnect(false);
+		clienteMqtt.disconnect(false);
 
 	}
 
@@ -1012,7 +1034,7 @@ void onMqttConnect(bool sessionPresent) {
 		// Si todo ha ido bien, proceso de inicio terminado.
 		MiCupula.ComOK = true;
 		Serial.print("** ");
-		Serial.print(ClienteNTP.getFormattedTime());
+		Serial.print(clienteNTP.getFormattedTime());
 		Serial.println(" - SISTEMA INICIADO CORRECTAMENTE **");
 
 	}
@@ -1074,7 +1096,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 			//Serial.println(String(ObjJson.measureLength()));
 
 			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-			xQueueSend(ColaComandos, &JSONmessageBuffer, 0);
+			xQueueSend(colaComandos, &JSONmessageBuffer, 0);
 			
 		}
 
@@ -1108,14 +1130,14 @@ void MandaRespuesta(String comando, String payload) {
 			ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
 			
 			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-			xQueueSend(ColaRespuestas, &JSONmessageBuffer, 0); 
+			xQueueSend(colaRespuestas, &JSONmessageBuffer, 0); 
 
 }
 
 // envia al topic tele la telemetria en Json
 void MandaTelemetria() {
 	
-	if (ClienteMQTT.connected()){
+	if (clienteMqtt.connected()){
 
 			String t_topic = MiConfig.teleTopic + "/INFO1";
 
@@ -1130,7 +1152,7 @@ void MandaTelemetria() {
 			ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
 			
 			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-			xQueueSendToBack(ColaRespuestas, &JSONmessageBuffer, 0); 
+			xQueueSendToBack(colaRespuestas, &JSONmessageBuffer, 0); 
 
 	}
 	
@@ -1152,9 +1174,9 @@ void TaskGestionRed ( void * parameter ) {
 
 	while(true){
 
-		if (WiFi.isConnected() && !ClienteMQTT.connected()){
+		if (WiFi.isConnected() && !clienteMqtt.connected()){
 			
-			ClienteMQTT.connect();
+			clienteMqtt.connect();
 			
 		}
 		
@@ -1178,7 +1200,7 @@ void TaskProcesaComandos ( void * parameter ){
 			// Limpiar el Buffer
 			memset(JSONmessageBuffer, 0, sizeof JSONmessageBuffer);
 
-			if (xQueueReceive(ColaComandos,&JSONmessageBuffer,0) == pdTRUE ){
+			if (xQueueReceive(colaComandos,&JSONmessageBuffer,0) == pdTRUE ){
 
 				//Serial.println("Procesando comando: " + String(JSONmessageBufferRX));
 
@@ -1194,6 +1216,9 @@ void TaskProcesaComandos ( void * parameter ){
 					COMANDO = ObjJson["COMANDO"].as<String>();
 					PAYLOAD = ObjJson["PAYLOAD"].as<String>();
 					
+					Serial.println("Comando: " + COMANDO);
+					Serial.println("Payload: " + PAYLOAD);
+
 					// ##### IMPLEMENTACION DE ASCOM
 					// Propiedad (digamos metodo) Connected
 					if (COMANDO == "Connected") {
@@ -1323,9 +1348,9 @@ void TaskProcesaComandos ( void * parameter ){
 
 						if (MiConfig.escribeconfig()){
 
-							ClienteMQTT.setServer(MiConfig.mqttserver, 1883);
-							ClienteMQTT.setCredentials(MiConfig.mqttusuario,MiConfig.mqttpassword);
-							ClienteMQTT.setWill(MiConfig.lwtTopic.c_str(),2,true,"Offline");
+							clienteMqtt.setServer(MiConfig.mqttserver, 1883);
+							clienteMqtt.setCredentials(MiConfig.mqttusuario,MiConfig.mqttpassword);
+							clienteMqtt.setWill(MiConfig.lwtTopic.c_str(),2,true,"Offline");
 							WiFi.begin(MiConfig.Wssid, MiConfig.WPasswd);
 
 						}
@@ -1337,8 +1362,7 @@ void TaskProcesaComandos ( void * parameter ){
 					else {
 
 						Serial.println("Me ha llegado un comando que no entiendo");
-						Serial.println("Comando: " + COMANDO);
-						Serial.println("Payload: " + PAYLOAD);
+
 
 					}
 
@@ -1373,7 +1397,7 @@ void TaskEnviaRespuestas( void * parameter ){
 		// Limpiar el Buffer
 		memset(JSONmessageBuffer, 0, sizeof JSONmessageBuffer);
 
-		if (xQueueReceive(ColaRespuestas,&JSONmessageBuffer,0) == pdTRUE ){
+		if (xQueueReceive(colaRespuestas,&JSONmessageBuffer,0) == pdTRUE ){
 
 				DynamicJsonBuffer jsonBuffer;
 
@@ -1388,20 +1412,20 @@ void TaskEnviaRespuestas( void * parameter ){
 					
 					if (TIPO == "BOTH"){
 
-						ClienteMQTT.publish(MQTTT.c_str(), 2, false, RESP.c_str());
-						Serial.println(ClienteNTP.getFormattedTime() + " " + CMND + " " + RESP);
+						clienteMqtt.publish(MQTTT.c_str(), 2, false, RESP.c_str());
+						Serial.println(clienteNTP.getFormattedTime() + " " + CMND + " " + RESP);
 						
 					}
 
 					else 	if (TIPO == "MQTT"){
 
-						ClienteMQTT.publish(MQTTT.c_str(), 2, false, RESP.c_str());
+						clienteMqtt.publish(MQTTT.c_str(), 2, false, RESP.c_str());
 																								
 					}
 					
 					else 	if (TIPO == "SERIE"){
 
-							Serial.println(ClienteNTP.getFormattedTime() + " " + CMND + " " + RESP);
+							Serial.println(clienteNTP.getFormattedTime() + " " + CMND + " " + RESP);
 						
 					}
 						
@@ -1502,7 +1526,7 @@ void TaskComandosSerieRun( void * parameter ){
 				ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
 			
 				// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-				xQueueSend(ColaComandos, &JSONmessageBuffer, 0);
+				xQueueSend(colaComandos, &JSONmessageBuffer, 0);
 				
 				// Reiniciar los buffers
 				sr_buffer[0] = '\0';
@@ -1539,6 +1563,24 @@ void TaskMandaTelemetria( void * parameter ){
 	
 }
 
+// tarea para gestion del cuadro de mando
+void TaskGestionCuadro( void * parameter ){
+
+	TickType_t xLastWakeTime;
+	const TickType_t xFrequency = 25;
+	xLastWakeTime = xTaskGetTickCount ();
+	
+
+	while(true){
+
+		miCuadroMando.Run();
+		
+		vTaskDelayUntil( &xLastWakeTime, xFrequency );
+
+	}
+	
+}
+
 // ISR del timer_stp
 
 uint32_t cp0_regs[18];
@@ -1561,7 +1603,7 @@ void IRAM_ATTR timer_stp_isr() {
   }
 	
   
-	ControladorStepper.run();
+	controladorStepper.run();
 	
 
  	if(cp_state) {
@@ -1592,18 +1634,29 @@ void setup() {
 
 	Serial.println("-- Iniciando Controlador Azimut --");
 
+	if (MODO_INSTALADOR){
+
+		Serial.println("ATENCION: MODO INSTALADOR ACTIVO");
+		Serial.println("FUNCIONALIDAD LIMITADA");
+
+	}
+
 	// Asignar funciones Callback de Micupula
 	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
 		
 	// Comunicaciones
-	ClienteMQTT = AsyncMqttClient();
+	clienteMqtt = AsyncMqttClient();
 	WiFi.onEvent(WiFiEventCallBack);
 
 	// Iniciar la Wifi
-	WiFi.begin();
+	if (!MODO_INSTALADOR){
 
+		WiFi.begin();
+
+	}
+	
 	// Iniciar el sistema de ficheros y formatear si no lo esta
-	SPIFFStatus = SPIFFS.begin(true);
+	spiffStatus = SPIFFS.begin(true);
 
 	if (SPIFFS.begin()){
 
@@ -1613,18 +1666,18 @@ void setup() {
 		if (MiConfig.leeconfig()){
 
 			// Las funciones callback de la libreria MQTT	
-			ClienteMQTT.onConnect(onMqttConnect);
-  			ClienteMQTT.onDisconnect(onMqttDisconnect);
-  			ClienteMQTT.onSubscribe(onMqttSubscribe);
-  			ClienteMQTT.onUnsubscribe(onMqttUnsubscribe);
-  			ClienteMQTT.onMessage(onMqttMessage);
-  			ClienteMQTT.onPublish(onMqttPublish);
-  			ClienteMQTT.setServer(MiConfig.mqttserver, 1883);
-			ClienteMQTT.setCleanSession(true);
-			ClienteMQTT.setClientId("ControlAzimut");
-			ClienteMQTT.setCredentials(MiConfig.mqttusuario,MiConfig.mqttpassword);
-			ClienteMQTT.setKeepAlive(4);
-			ClienteMQTT.setWill(MiConfig.lwtTopic.c_str(),2,true,"Offline");
+			clienteMqtt.onConnect(onMqttConnect);
+  			clienteMqtt.onDisconnect(onMqttDisconnect);
+  			clienteMqtt.onSubscribe(onMqttSubscribe);
+  			clienteMqtt.onUnsubscribe(onMqttUnsubscribe);
+  			clienteMqtt.onMessage(onMqttMessage);
+  			clienteMqtt.onPublish(onMqttPublish);
+  			clienteMqtt.setServer(MiConfig.mqttserver, 1883);
+			clienteMqtt.setCleanSession(true);
+			clienteMqtt.setClientId("ControlAzimut");
+			clienteMqtt.setCredentials(MiConfig.mqttusuario,MiConfig.mqttpassword);
+			clienteMqtt.setKeepAlive(4);
+			clienteMqtt.setWill(MiConfig.lwtTopic.c_str(),2,true,"Offline");
 	
 		}
 
@@ -1640,29 +1693,36 @@ void setup() {
 	}
 
 	// Instanciar el controlador de Stepper.
-	ControladorStepper = AccelStepper(AccelStepper::DRIVER, MECANICA_STEPPER_PULSEPIN , MECANICA_STEPPER_DIRPIN);
-	ControladorStepper.disableOutputs();
-	ControladorStepper.setCurrentPosition(0);
-	ControladorStepper.setEnablePin(MECANICA_STEPPER_ENABLEPING);
-	ControladorStepper.setMaxSpeed(MECANICA_STEPPER_MAXSPEED);
-	ControladorStepper.setAcceleration(MECANICA_STEPPER_MAXACELERAION);
-	ControladorStepper.setPinsInverted(MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS);
-	ControladorStepper.setMinPulseWidth(MECANICA_STEPPER_ANCHO_PULSO); // Ancho minimo de pulso en microsegundos
+	controladorStepper = AccelStepper(AccelStepper::DRIVER, MECANICA_STEPPER_PULSEPIN , MECANICA_STEPPER_DIRPIN);
+	controladorStepper.disableOutputs();
+	controladorStepper.setCurrentPosition(0);
+	controladorStepper.setEnablePin(MECANICA_STEPPER_ENABLEPING);
+	controladorStepper.setMaxSpeed(MECANICA_STEPPER_MAXSPEED);
+	controladorStepper.setAcceleration(MECANICA_STEPPER_MAXACELERAION);
+	controladorStepper.setPinsInverted(MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS);
+	controladorStepper.setMinPulseWidth(MECANICA_STEPPER_ANCHO_PULSO); // Ancho minimo de pulso en microsegundos
 
 	// COLAS
-	ColaComandos = xQueueCreate(10,100);
-	ColaRespuestas = xQueueCreate(10,300);
+	colaComandos = xQueueCreate(10,100);
+	colaRespuestas = xQueueCreate(10,300);
 
 	// TASKS
 	Serial.println("Creando tareas del sistema.");
 	
 	// Tareas CORE0 gestinadas por FreeRTOS
-	xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&THandleTaskGestionRed,0);
-	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",3000,NULL,1,&THandleTaskProcesaComandos,0);
-	xTaskCreatePinnedToCore(TaskEnviaRespuestas,"EnviaMQTT",2000,NULL,1,&THandleTaskEnviaRespuestas,0);
-	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&THandleTaskCupulaRun,0);
-	xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&THandleTaskMandaTelemetria,0);
-	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&THandleTaskComandosSerieRun,0);
+
+	xTaskCreatePinnedToCore(TaskGestionCuadro,"GestionCuadro",2000,NULL,2,&tHandleTaskEnviaRespuestas,0);
+	xTaskCreatePinnedToCore(TaskEnviaRespuestas,"EnviaMQTT",2000,NULL,1,&tHandleTaskEnviaRespuestas,0);
+	xTaskCreatePinnedToCore(TaskProcesaComandos,"ProcesaComandos",3000,NULL,1,&tHandleTaskProcesaComandos,0);
+	xTaskCreatePinnedToCore(TaskCupulaRun,"CupulaRun",2000,NULL,1,&tHandleTaskCupulaRun,0);
+	xTaskCreatePinnedToCore(TaskComandosSerieRun,"ComandosSerieRun",1000,NULL,1,&tHandleTaskComandosSerieRun,0);
+
+	if (!MODO_INSTALADOR){
+
+		xTaskCreatePinnedToCore(TaskGestionRed,"MQTT_Conectar",3000,NULL,1,&tHandleTaskGestionRed,0);
+		xTaskCreatePinnedToCore(TaskMandaTelemetria,"MandaTelemetria",2000,NULL,1,&tHandleTaskMandaTelemetria,0);
+	
+	}
 	
 	// Tareas CORE1. 
 
@@ -1673,7 +1733,17 @@ void setup() {
   	timerAttachInterrupt(timer_stp, &timer_stp_isr, true);
   	timerAlarmWrite(timer_stp, 150, true);
   	timerAlarmEnable(timer_stp);
-	
+
+	if (MODO_INSTALADOR){
+
+		Serial.println("Probando el panel del Cuadro Electrico");
+		miCuadroMando.TestSalidas();
+		Serial.println("ATENCION: MODO INSTALADOR ACTIVO");
+		Serial.println("FUNCIONALIDAD LIMITADA");
+
+
+	}
+
 	// Init Completado.
 	Serial.println("Setup Completado.");
 	
@@ -1686,7 +1756,7 @@ void setup() {
 // Funcion LOOP de Arduino
 void loop() {
 		
-		//ControladorStepper.run();
+		//controladorStepper.run();
 	
 }
 
