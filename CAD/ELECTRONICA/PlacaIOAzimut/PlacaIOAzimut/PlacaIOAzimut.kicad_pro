@@ -389,7 +389,7 @@
       "idf": "",
       "netlist": "PlacaIOAzimut.net",
       "specctra_dsn": "",
-      "step": "",
+      "step": "PlacaIOAzimut.step",
       "vrml": ""
     },
     "page_layout_descr_file": ""
