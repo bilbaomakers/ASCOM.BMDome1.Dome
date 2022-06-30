@@ -69,7 +69,9 @@ static const uint8_t MECANICA_STEPPER_DIRPIN = 25;						// Pin de direccion del 
 static const uint8_t MECANICA_STEPPER_ENABLEPING = 33;				// Pin de enable del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;		// Numero de pasos por vuelta del STEPPER (Configuracion del controlador)
 static const float MECANICA_STEPPER_MAXSPEED = (MECANICA_PASOS_POR_VUELTA_MOTOR * 5);	// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXACELERAION = (MECANICA_STEPPER_MAXSPEED / 3);	// Aceleracion maxima del stepper (pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
+static const float MECANICA_STEPPER_MAXSPEED_INST = (MECANICA_PASOS_POR_VUELTA_MOTOR);	// Velocidad maxima del stepper en modo instalador (pasos por segundo)
+static const float MECANICA_STEPPER_MAXACELERATION = (MECANICA_STEPPER_MAXSPEED / 3);	// Aceleracion maxima del stepper (pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
+static const float MECANICA_STEPPER_MAXACELERATION_INST = (MECANICA_STEPPER_MAXSPEED_INST / 3);	// Aceleracion maxima del stepper modo instalador(pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
 static const short MECANICA_RATIO_REDUCTORA = 6;							// Ratio de reduccion de la reductora
 static const short MECANICA_DIENTES_PINON_ATAQUE = 16;				// Numero de dientes del piños de ataque
 static const short MECANICA_DIENTES_CREMALLERA_CUPULA = 981;	// Numero de dientes de la cremallera de la cupula
@@ -137,7 +139,7 @@ NTPClient clienteNTP(udpNtp, "europe.pool.ntp.org", HORA_LOCAL * 3600, 3600);
 extern "C" {uint8_t temprature_sens_read();}
 
 // Cuado Mando
-CuadroMando miCuadroMando(MECANICA_BOTONPANEL1, MECANICA_BOTONPANEL2, MECANICA_BOTONPANEL3, MECANICA_BOTONPANEL4, MECANICA_EMERGENCY_STOP, MECANICA_SENSOR_HOME, MECANICA_LEDROJO, MECANICA_LEDVERDE, MECANICA_LEDAZUL, MECANICA_SALIDA4, MECANICA_SALIDA5, MECANICA_SALIDA6, MECANICA_SALIDA7);
+CuadroMando miCuadroMando(MECANICA_BOTONPANEL1, MECANICA_BOTONPANEL2, MECANICA_BOTONPANEL3, MECANICA_BOTONPANEL4, MECANICA_LEDROJO, MECANICA_LEDVERDE, MECANICA_LEDAZUL, MECANICA_SALIDA4, MECANICA_SALIDA5, MECANICA_SALIDA6, MECANICA_SALIDA7);
 
 #pragma endregion
 
@@ -374,7 +376,6 @@ public:
 
 #pragma endregion
 
-
 #pragma region IMPLEMENTACIONES BMDomo1
 
 // Constructor. Lo que sea que haya que hacer antes de devolver el objeto de esta clase al creador.
@@ -429,7 +430,6 @@ long BMDomo1::PasosToGrados(long pasos) {
 }
 
 #pragma endregion
-
 
 
 #pragma region Funciones Publicas
@@ -738,7 +738,6 @@ void BMDomo1::AbortSlew(){
 		
 }
 
-
 void BMDomo1::SetPark(int l_ParkPos){
 
 	if (l_ParkPos >= 0 && l_ParkPos <360){
@@ -939,7 +938,6 @@ boolean BMDomo1::LeeConfig(){
 
 #pragma endregion
 
-
 // Objeto de la clase BMDomo1. Es necesario definirlo aqui debajo de la definicion de clase. No puedo en la region de arriba donde tengo los demas
 // Eso es porque la clase usa objetos de fuera. Esto es chapuza pero de momento asi no me lio. Despues todo por referencia y la clase esta debajo de los includes o en una libreria a parte. Asi esntonces estaria OK.
 BMDomo1 MiCupula(MECANICA_SENSOR_HOME);
@@ -961,6 +959,7 @@ void WiFiEventCallBack(WiFiEvent_t event) {
     	case SYSTEM_EVENT_STA_GOT_IP:
      	   	Serial.print("Conexion WiFi: Conetado. IP: ");
       	  	Serial.println(WiFi.localIP());
+			miCuadroMando.ledVerde.Ciclo(200,200,1000,2);
 			clienteNTP.begin();
 			if (clienteNTP.update()){
 
@@ -977,6 +976,7 @@ void WiFiEventCallBack(WiFiEvent_t event) {
         	break;
     	case SYSTEM_EVENT_STA_DISCONNECTED:
         	Serial.println("Conexion WiFi: Desconetado");
+			miCuadroMando.ledVerde.Ciclo(1000,1000,1000,1);
         	break;
 		default:
 			break;
@@ -994,6 +994,8 @@ void onMqttConnect(bool sessionPresent) {
 
 	Serial.println("Conexion MQTT: Conectado. Core:" + String(xPortGetCoreID()));
 	
+	miCuadroMando.ledVerde.Encender();
+
 	bool susflag = false;
 	bool lwtflag = false;
 
@@ -1044,7 +1046,8 @@ void onMqttConnect(bool sessionPresent) {
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   
 	Serial.println("Conexion MQTT: Desconectado");
-	
+	miCuadroMando.ledVerde.Ciclo(200,200,1000,2);
+
 }
 
 void onMqttSubscribe(uint16_t packetId, uint8_t qos) {
@@ -1158,6 +1161,27 @@ void MandaTelemetria() {
 	
 }
 
+#pragma endregion
+
+#pragma region Otras funciones Auxiliares
+
+// Para enviar comandos a la cola de comandos. Para uso como callback en la clase CuadroMando
+void enviaComando (String l_comando, String l_payload){
+
+	
+	// Formatear el JSON del comando y mandarlo a la cola de comandos.
+	DynamicJsonBuffer jsonBuffer;
+	JsonObject& ObjJson = jsonBuffer.createObject();
+	ObjJson.set("COMANDO",l_comando);
+	ObjJson.set("PAYLOAD",l_payload);
+
+	char JSONmessageBuffer[100];
+	ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+			
+	// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
+	xQueueSend(colaComandos, &JSONmessageBuffer, 0);
+
+}
 
 #pragma endregion
 
@@ -1285,6 +1309,7 @@ void TaskProcesaComandos ( void * parameter ){
 						MiCupula.SetPark(PAYLOAD.toInt());
 						
 					}
+					
 
 					else if (COMANDO == "Park"){
 
@@ -1298,6 +1323,12 @@ void TaskProcesaComandos ( void * parameter ){
 
 						MiCupula.IniciaCupula(PAYLOAD);
 
+					}
+
+					else if (COMANDO == "SetParkHere"){
+
+						MiCupula.SetPark(MiCupula.GetCurrentAzimut());
+						
 					}
 
 					// ##### COMANDOS PARA LA GESTION DE LA CONFIGURACION
@@ -1573,8 +1604,30 @@ void TaskGestionCuadro( void * parameter ){
 
 	while(true){
 
-		miCuadroMando.Run();
+		if (MiCupula.HardwareOK){
+			
+			miCuadroMando.ledAzul.Encender();
+
+		}
 		
+		else{
+
+			if (MiCupula.AtPark){
+
+				miCuadroMando.ledAzul.Ciclo(1000,1000,1000,1);
+
+			}
+			
+			else{
+
+				miCuadroMando.ledAzul.Apagar();
+
+			}
+
+		}
+		
+		miCuadroMando.Run();
+
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
 	}
@@ -1643,11 +1696,16 @@ void setup() {
 
 	// Asignar funciones Callback de Micupula
 	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
+
+	// Asignar funciones Callback de miCuadroMando
+	miCuadroMando.setEnviaComandoCallback(enviaComando);
 		
 	// Comunicaciones
 	clienteMqtt = AsyncMqttClient();
 	WiFi.onEvent(WiFiEventCallBack);
 
+	// Lez verde al modo Sin conexion red.
+	miCuadroMando.ledVerde.Ciclo(1000,1000,1000,1);
 	// Iniciar la Wifi
 	if (!MODO_INSTALADOR){
 
@@ -1698,9 +1756,17 @@ void setup() {
 	controladorStepper.setCurrentPosition(0);
 	controladorStepper.setEnablePin(MECANICA_STEPPER_ENABLEPING);
 	controladorStepper.setMaxSpeed(MECANICA_STEPPER_MAXSPEED);
-	controladorStepper.setAcceleration(MECANICA_STEPPER_MAXACELERAION);
+	controladorStepper.setAcceleration(MECANICA_STEPPER_MAXACELERATION);
 	controladorStepper.setPinsInverted(MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS, MECANICA_STEPPER_INVERTPINS);
 	controladorStepper.setMinPulseWidth(MECANICA_STEPPER_ANCHO_PULSO); // Ancho minimo de pulso en microsegundos
+
+	if (MODO_INSTALADOR){
+
+		controladorStepper.setMaxSpeed(MECANICA_STEPPER_MAXSPEED_INST);
+		controladorStepper.setAcceleration(MECANICA_STEPPER_MAXACELERATION_INST);
+
+	}
+	
 
 	// COLAS
 	colaComandos = xQueueCreate(10,100);
@@ -1741,11 +1807,11 @@ void setup() {
 		Serial.println("ATENCION: MODO INSTALADOR ACTIVO");
 		Serial.println("FUNCIONALIDAD LIMITADA");
 
-
 	}
 
 	// Init Completado.
 	Serial.println("Setup Completado.");
+	miCuadroMando.ledRojo.Pulsos(200,500,3);
 	
 }
 

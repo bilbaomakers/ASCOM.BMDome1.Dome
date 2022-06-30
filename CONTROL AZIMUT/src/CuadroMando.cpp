@@ -1,17 +1,49 @@
 #include <CuadroMando.h>
+#include <OneButton.h> // Interesante: https://github.com/mathertel/OneButton
+
+// Funcionalidades de Botones y Luces
+
+// LUZ ROJA - Avisos
+	// Aviso "Seta apretada" si intento HW Init - 3 pulsos cortos
+	// Aviso inicio del movimiento - 1 pulso 1 segundo
+	// Aviso al terminar de iniciar el sistema - 3 pulsos cortos
+
+// LUZ VERDE - Comunicaciones
+	// Conectando a la wifi - 1 pulso por segundo
+	// Conectando al MQTT - 2 pulsos cortos y 1 segundo idle
+	// Comunicaciones OK - Permanente
+
+// LUZ AZUL - ESTADO DEL HW
+	// HW NOT INIT - Apagado
+	// HW OK READY - Encendido
+	// HW READY AT PARK - 1 Pulso Segundo
+
+// BOTON1 - AZUL
+	// CLICK - Inicializa Hardware STD (busca home)
+	// HOLD - Inicializa Hardware FORCE (sin buscar home)
+	
+// BOTON2 - VERDE
+	// CLICK - Mover a 90 (SlewToAZimut)
+	// HOLD - Set Park en la posicion actual (SetParkHere)
+	
+// BOTON3 - ROJO
+	// CLICK - Parada Normal (AbortSlew)
+	// HOLD - Aparcar (Park)
+
+// BOTON4 - VERDE
+	// CLICK - Mover a 270 (SlewToAZimut)
+	// HOLD - 
 
 
 // Constructor
-CuadroMando::CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3, uint8_t pinBoton4, uint8_t pinEmergencyStop, uint8_t pinHomeSensor, uint8_t pinLedRojo, uint8_t pinLedVerde, uint8_t pinLedAzul, uint8_t pinSalida4, uint8_t pinSalida5, uint8_t pinSalida6, uint8_t pinSalida7){
+CuadroMando::CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3, uint8_t pinBoton4, uint8_t pinLedRojo, uint8_t pinLedVerde, uint8_t pinLedAzul, uint8_t pinSalida4, uint8_t pinSalida5, uint8_t pinSalida6, uint8_t pinSalida7){
 
 	// Llenar el array con los pines, una vez y luego ya esta facil
 	arrayPinesEntrada[0]=pinBoton1;
 	arrayPinesEntrada[1]=pinBoton2;
 	arrayPinesEntrada[2]=pinBoton3;
 	arrayPinesEntrada[3]=pinBoton4;
-	arrayPinesEntrada[4]=pinEmergencyStop;
-	arrayPinesEntrada[5]=pinHomeSensor;
-
+	
 	arrayPinesSalida[0]=pinLedRojo;
 	arrayPinesSalida[1]=pinLedVerde;
 	arrayPinesSalida[2]=pinLedAzul;
@@ -19,9 +51,10 @@ CuadroMando::CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3
 	arrayPinesSalida[4]=pinSalida5;
 	arrayPinesSalida[5]=pinSalida6;
 	arrayPinesSalida[6]=pinSalida7;
-		
+
+
 	// Para inicializar las entradas
-	for (size_t i = 0; i < 6; i++){
+	for (size_t i = 0; i < 4; i++){
 		
 		pinMode(arrayPinesEntrada[i], INPUT);
 
@@ -39,7 +72,22 @@ CuadroMando::CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3
 	ledRojo = IndicadorLed(arrayPinesSalida[0], true);
 	ledVerde = IndicadorLed(arrayPinesSalida[1], true);
 	ledAzul = IndicadorLed(arrayPinesSalida[2], true);
-	 		
+
+	boton1 = OneButton(pinBoton1,true,true);
+	boton2 = OneButton(pinBoton2,true,true);
+	boton3 = OneButton(pinBoton3,true,true);
+	boton4 = OneButton(pinBoton4,true,true);
+	
+	// Parametros para los botones
+  	boton1.setDebounceTicks(20); // ms de debounce
+  	boton1.setPressTicks(500); // ms para HOLD
+	boton2.setDebounceTicks(20); // ms de debounce
+  	boton2.setPressTicks(500); // ms para HOLD
+	boton3.setDebounceTicks(20); // ms de debounce
+  	boton3.setPressTicks(500); // ms para HOLD
+	boton4.setDebounceTicks(20); // ms de debounce
+  	boton4.setPressTicks(500); // ms para HOLD
+
 }
 
 void CuadroMando::TestSalidas(){
@@ -47,14 +95,67 @@ void CuadroMando::TestSalidas(){
 	for (size_t i = 0; i < 7; i++)
 	{
 		digitalWrite(arrayPinesSalida[i], HIGH);
-		delay(500);
+		delay(1000);
 		digitalWrite(arrayPinesSalida[i], LOW);
 		delay(500);
 	}
 
 }
 
+void CuadroMando::setEnviaComandoCallback(enviaComandoCallback ref){
+
+	miEnviaComando = (enviaComandoCallback)ref;
+
+}
+
+void CuadroMando::handleClickBoton1(){
+
+	this->miEnviaComando("InitHW","STD");
+
+}
+
+void CuadroMando::handleHoldBoton1(){
+
+	this->miEnviaComando("InitHW","FORCE");
+
+}
+
+void CuadroMando::handleClickBoton2(){
+		
+	this->miEnviaComando("SlewToAZimut","90");
+
+}
+
+void CuadroMando::handleHoldBoton2(){
+
+	this->miEnviaComando("SetParkHere","NA");
+
+}
+
+void CuadroMando::handleClickBoton3(){
+
+	this->miEnviaComando("AbortSlew","NA");
+
+}
+
+void CuadroMando::handleHoldBoton3(){
+	
+	this->miEnviaComando("Park","NA");
+
+}
+
+void CuadroMando::handleClickBoton4(){
+
+	this->miEnviaComando("SlewToAZimut","270");
+
+}
+
+void CuadroMando::handleHoldBoton4(){
+
+}
+
 void CuadroMando::Run(){
 
+	boton1.tick();
 
 }
