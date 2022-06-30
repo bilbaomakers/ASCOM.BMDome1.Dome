@@ -64,9 +64,9 @@ NOTAS SOBRE EL STEPPER Y LA LIBRERIA ACCELSTEPPER
 #define CONFIG_TASK_WDT_CHECK_IDLE_TASK_CPU1 0
 
 // Para la configuracion de conjunto Mecanico de arrastre
-static const uint8_t MECANICA_STEPPER_PULSEPIN = 32;					// Pin de pulsos del stepper
-static const uint8_t MECANICA_STEPPER_DIRPIN = 25;						// Pin de direccion del stepper
-static const uint8_t MECANICA_STEPPER_ENABLEPING = 33;				// Pin de enable del stepper
+static const uint8_t MECANICA_STEPPER_PULSEPIN = 25;					// Pin de pulsos del stepper
+static const uint8_t MECANICA_STEPPER_DIRPIN = 33;						// Pin de direccion del stepper
+static const uint8_t MECANICA_STEPPER_ENABLEPING = 32;				// Pin de enable del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;		// Numero de pasos por vuelta del STEPPER (Configuracion del controlador)
 static const float MECANICA_STEPPER_MAXSPEED = (MECANICA_PASOS_POR_VUELTA_MOTOR * 5);	// Velocidad maxima del stepper (pasos por segundo)
 static const float MECANICA_STEPPER_MAXSPEED_INST = (MECANICA_PASOS_POR_VUELTA_MOTOR);	// Velocidad maxima del stepper en modo instalador (pasos por segundo)
@@ -87,13 +87,13 @@ static const uint8_t MECANICA_EMERGENCY_STOP = 27;
 static const uint8_t MECANICA_SENSOR_HOME = 26;								// Pin para el sensor de HOME
 
 // Salidas
-static const uint8_t MECANICA_LEDROJO = 23;
-static const uint8_t MECANICA_LEDVERDE = 22;
-static const uint8_t MECANICA_LEDAZUL = 21;
+static const uint8_t MECANICA_LEDROJO = 16;
+static const uint8_t MECANICA_LEDVERDE = 17;
+static const uint8_t MECANICA_LEDAZUL = 5;
 static const uint8_t MECANICA_SALIDA4 = 19;
-static const uint8_t MECANICA_SALIDA5 = 5;
-static const uint8_t MECANICA_SALIDA6 = 17;
-static const uint8_t MECANICA_SALIDA7 = 16;
+static const uint8_t MECANICA_SALIDA5 = 21;
+static const uint8_t MECANICA_SALIDA6 = 22;
+static const uint8_t MECANICA_SALIDA7 = 23;
 
 // Para el ticker del BMDomo1
 unsigned long TIEMPO_TICKER_RAPIDO = 500;
@@ -959,7 +959,7 @@ void WiFiEventCallBack(WiFiEvent_t event) {
     	case SYSTEM_EVENT_STA_GOT_IP:
      	   	Serial.print("Conexion WiFi: Conetado. IP: ");
       	  	Serial.println(WiFi.localIP());
-			miCuadroMando.ledVerde.Ciclo(200,200,1000,2);
+			//miCuadroMando.ledVerde.Ciclo(200,200,1000,2);
 			clienteNTP.begin();
 			if (clienteNTP.update()){
 
@@ -976,7 +976,7 @@ void WiFiEventCallBack(WiFiEvent_t event) {
         	break;
     	case SYSTEM_EVENT_STA_DISCONNECTED:
         	Serial.println("Conexion WiFi: Desconetado");
-			miCuadroMando.ledVerde.Ciclo(1000,1000,1000,1);
+			//miCuadroMando.ledVerde.Ciclo(1000,1000,1000,1);
         	break;
 		default:
 			break;
@@ -1046,7 +1046,7 @@ void onMqttConnect(bool sessionPresent) {
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   
 	Serial.println("Conexion MQTT: Desconectado");
-	miCuadroMando.ledVerde.Ciclo(200,200,1000,2);
+	//miCuadroMando.ledVerde.Ciclo(200,200,1000,2);
 
 }
 
@@ -1280,6 +1280,7 @@ void TaskProcesaComandos ( void * parameter ){
 						// Mover la cupula
 						// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round().
 						MiCupula.MoveTo(round(PAYLOAD.toFloat()));
+						miCuadroMando.ledRojo.Pulsos(1500,100,1);
 
 					}
 
@@ -1328,6 +1329,12 @@ void TaskProcesaComandos ( void * parameter ){
 					else if (COMANDO == "SetParkHere"){
 
 						MiCupula.SetPark(MiCupula.GetCurrentAzimut());
+						
+					}
+
+					else if (COMANDO == "Reboot"){
+
+						ESP.restart();
 						
 					}
 
@@ -1606,23 +1613,41 @@ void TaskGestionCuadro( void * parameter ){
 
 		if (MiCupula.HardwareOK){
 			
-			miCuadroMando.ledAzul.Encender();
+
+			if (MiCupula.Slewing){
+
+				if (miCuadroMando.ledAzul.EstadoLed != IndicadorLed::TipoEstadoLed::LED_CICLO){
+
+					miCuadroMando.ledAzul.Ciclo(500,250,250,1);
+
+				}
+				
+
+			}
+
+			else {
+
+
+				
+				if (miCuadroMando.ledAzul.EstadoLed != IndicadorLed::TipoEstadoLed::LED_ENCENDIDO){
+
+					miCuadroMando.ledAzul.Encender();
+
+				}
+				
+								
+			}
 
 		}
 		
 		else{
 
-			if (MiCupula.AtPark){
-
-				miCuadroMando.ledAzul.Ciclo(1000,1000,1000,1);
-
-			}
-			
-			else{
+			if (miCuadroMando.ledAzul.EstadoLed != IndicadorLed::LED_APAGADO){
 
 				miCuadroMando.ledAzul.Apagar();
 
 			}
+			
 
 		}
 		
@@ -1705,8 +1730,9 @@ void setup() {
 	WiFi.onEvent(WiFiEventCallBack);
 
 	// Lez verde al modo Sin conexion red.
-	miCuadroMando.ledVerde.Ciclo(1000,1000,1000,1);
+	miCuadroMando.ledVerde.Ciclo(1000,500,500,1);
 	// Iniciar la Wifi
+
 	if (!MODO_INSTALADOR){
 
 		WiFi.begin();
@@ -1802,8 +1828,8 @@ void setup() {
 
 	if (MODO_INSTALADOR){
 
-		Serial.println("Probando el panel del Cuadro Electrico");
-		miCuadroMando.TestSalidas();
+		//Serial.println("Probando el panel del Cuadro Electrico");
+		//miCuadroMando.TestSalidas();
 		Serial.println("ATENCION: MODO INSTALADOR ACTIVO");
 		Serial.println("FUNCIONALIDAD LIMITADA");
 
@@ -1811,7 +1837,8 @@ void setup() {
 
 	// Init Completado.
 	Serial.println("Setup Completado.");
-	miCuadroMando.ledRojo.Pulsos(200,500,3);
+	miCuadroMando.ledRojo.Pulsos(50,50,3);
+	
 	
 }
 

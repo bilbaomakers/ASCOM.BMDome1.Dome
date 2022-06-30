@@ -20,9 +20,9 @@ class CuadroMando{
 		OneButton boton4;
 
 		// Funciones Callback de los botones
-		void handleClickBoton1();
-		void handleHoldBoton1();
-		void handleClickBoton2();
+		static void handleClickBoton1();
+		static void handleHoldBoton1();
+		static void handleClickBoton2();
 		void handleHoldBoton2();
 		void handleClickBoton3();
 		void handleHoldBoton3();

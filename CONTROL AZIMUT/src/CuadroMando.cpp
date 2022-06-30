@@ -69,9 +69,9 @@ CuadroMando::CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3
 	}
 
 	
-	ledRojo = IndicadorLed(arrayPinesSalida[0], true);
-	ledVerde = IndicadorLed(arrayPinesSalida[1], true);
-	ledAzul = IndicadorLed(arrayPinesSalida[2], true);
+	ledRojo = IndicadorLed(arrayPinesSalida[0], false);
+	ledVerde = IndicadorLed(arrayPinesSalida[1], false);
+	ledAzul = IndicadorLed(arrayPinesSalida[2], false);
 
 	boton1 = OneButton(pinBoton1,true,true);
 	boton2 = OneButton(pinBoton2,true,true);
@@ -87,6 +87,11 @@ CuadroMando::CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3
   	boton3.setPressTicks(500); // ms para HOLD
 	boton4.setDebounceTicks(20); // ms de debounce
   	boton4.setPressTicks(500); // ms para HOLD
+	
+	//boton1.attachClick(handleClickBoton1);
+	//boton2.attachClick(handleClickBoton2);
+	
+
 
 }
 
@@ -95,9 +100,8 @@ void CuadroMando::TestSalidas(){
 	for (size_t i = 0; i < 7; i++)
 	{
 		digitalWrite(arrayPinesSalida[i], HIGH);
-		delay(1000);
+		delay(2000);
 		digitalWrite(arrayPinesSalida[i], LOW);
-		delay(500);
 	}
 
 }
@@ -110,19 +114,19 @@ void CuadroMando::setEnviaComandoCallback(enviaComandoCallback ref){
 
 void CuadroMando::handleClickBoton1(){
 
-	this->miEnviaComando("InitHW","STD");
+	miEnviaComando("InitHW","STD");
 
 }
 
 void CuadroMando::handleHoldBoton1(){
 
-	this->miEnviaComando("InitHW","FORCE");
+	miEnviaComando("InitHW","FORCE");
 
 }
 
 void CuadroMando::handleClickBoton2(){
 		
-	this->miEnviaComando("SlewToAZimut","90");
+	miEnviaComando("SlewToAZimut","90");
 
 }
 
@@ -157,5 +161,11 @@ void CuadroMando::handleHoldBoton4(){
 void CuadroMando::Run(){
 
 	boton1.tick();
+	boton2.tick();
+	boton3.tick();
+	boton4.tick();
+	ledRojo.RunFast();
+	ledVerde.RunFast();
+	ledAzul.RunFast();
 
 }
