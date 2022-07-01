@@ -1280,7 +1280,7 @@ void TaskProcesaComandos ( void * parameter ){
 						// Mover la cupula
 						// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round().
 						MiCupula.MoveTo(round(PAYLOAD.toFloat()));
-						miCuadroMando.ledRojo.Pulsos(1500,100,1);
+						
 
 					}
 
@@ -1292,6 +1292,7 @@ void TaskProcesaComandos ( void * parameter ){
 						// no solo no importa sino que esta bien que no se procesen mas hasta que haya una respuesta de este
 						// comando ya que es muy importante.
 						MiCupula.AbortSlew();
+						miCuadroMando.ledRojo.Pulsos(1500,500,2);
 
 					}
 
@@ -1301,7 +1302,7 @@ void TaskProcesaComandos ( void * parameter ){
 
 							
 						MiCupula.FindHome();
-
+						miCuadroMando.ledRojo.Pulsos(1500,500,1);
 
 					}
 					
@@ -1335,6 +1336,30 @@ void TaskProcesaComandos ( void * parameter ){
 					else if (COMANDO == "Reboot"){
 
 						ESP.restart();
+						
+					}
+
+					else if (COMANDO == "SlewRelativeAzimut"){
+						
+						
+						if (!MiCupula.Slewing){
+
+							long destino;
+							destino = (MiCupula.GetCurrentAzimut() + round(PAYLOAD.toFloat())) ;
+
+							if(destino >360 ){
+
+								MiCupula.MoveTo(destino - 360);
+
+							}
+
+							if(destino < 0){
+
+								MiCupula.MoveTo(destino + 360);
+
+							}
+
+						}
 						
 					}
 

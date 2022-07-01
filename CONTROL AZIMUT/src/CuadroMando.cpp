@@ -4,9 +4,11 @@
 // Funcionalidades de Botones y Luces
 
 // LUZ ROJA - Avisos
-	// Aviso "Seta apretada" si intento HW Init - 3 pulsos cortos
-	// Aviso inicio del movimiento - 1 pulso 1 segundo
-	// Aviso al terminar de iniciar el sistema - 3 pulsos cortos
+	// Aviso "Seta apretada" si intento HW Init - 3 pulsos medios
+	// Aviso AbortSlew - 2 pulsos largos
+	// Aviso buscando casa - 1 pulso largo
+	// Aviso al terminar de iniciar el sistema - 3 pulsos cortos rapidos
+	// Aviso botones - Click 1 pulso corto - Hold 2 pulsos cortos
 
 // LUZ VERDE - Comunicaciones
 	// Conectando a la wifi - 1 pulso por segundo
@@ -69,6 +71,7 @@ CuadroMando::CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3
 	}
 
 	
+	
 	ledRojo = IndicadorLed(arrayPinesSalida[0], false);
 	ledVerde = IndicadorLed(arrayPinesSalida[1], false);
 	ledAzul = IndicadorLed(arrayPinesSalida[2], false);
@@ -106,57 +109,63 @@ void CuadroMando::TestSalidas(){
 
 }
 
+// Para paras la callback de enviar comandos
 void CuadroMando::setEnviaComandoCallback(enviaComandoCallback ref){
 
 	miEnviaComando = (enviaComandoCallback)ref;
 
 }
 
+// BOTON1 CLICK
 void CuadroMando::handleClickBoton1(){
 
 	miEnviaComando("InitHW","STD");
 
 }
 
+// BOTON1 HOLD
 void CuadroMando::handleHoldBoton1(){
 
 	miEnviaComando("InitHW","FORCE");
 
 }
 
+
 void CuadroMando::handleClickBoton2(){
 		
-	miEnviaComando("SlewToAZimut","90");
+	miEnviaComando("SlewRelativeAzimut","-45");
 
 }
 
 void CuadroMando::handleHoldBoton2(){
 
-	this->miEnviaComando("SetParkHere","NA");
+	miEnviaComando("SetParkHere","NA");
 
 }
 
 void CuadroMando::handleClickBoton3(){
 
-	this->miEnviaComando("AbortSlew","NA");
+	miEnviaComando("AbortSlew","NA");
 
 }
 
 void CuadroMando::handleHoldBoton3(){
 	
-	this->miEnviaComando("Park","NA");
+	miEnviaComando("Park","NA");
 
 }
 
 void CuadroMando::handleClickBoton4(){
 
-	this->miEnviaComando("SlewToAZimut","270");
+	miEnviaComando("SlewRelativeAzimut","45");
 
 }
 
+/*
 void CuadroMando::handleHoldBoton4(){
 
 }
+*/
 
 void CuadroMando::Run(){
 
