@@ -1,4 +1,5 @@
-#pragma region COMENTARIOS
+ 
+ #pragma region COMENTARIOS
 
 /*
 
@@ -69,7 +70,7 @@ static const uint8_t MECANICA_STEPPER_DIRPIN = 33;						// Pin de direccion del 
 static const uint8_t MECANICA_STEPPER_ENABLEPING = 32;				// Pin de enable del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;		// Numero de pasos por vuelta del STEPPER (Configuracion del controlador)
 static const float MECANICA_STEPPER_MAXSPEED = (MECANICA_PASOS_POR_VUELTA_MOTOR * 5);	// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXSPEED_INST = (MECANICA_PASOS_POR_VUELTA_MOTOR);	// Velocidad maxima del stepper en modo instalador (pasos por segundo)
+static const float MECANICA_STEPPER_MAXSPEED_INST = (MECANICA_PASOS_POR_VUELTA_MOTOR * 5);	// Velocidad maxima del stepper en modo instalador (pasos por segundo)
 static const float MECANICA_STEPPER_MAXACELERATION = (MECANICA_STEPPER_MAXSPEED / 3);	// Aceleracion maxima del stepper (pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
 static const float MECANICA_STEPPER_MAXACELERATION_INST = (MECANICA_STEPPER_MAXSPEED_INST / 3);	// Aceleracion maxima del stepper modo instalador(pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
 static const short MECANICA_RATIO_REDUCTORA = 6;							// Ratio de reduccion de la reductora
@@ -1347,15 +1348,21 @@ void TaskProcesaComandos ( void * parameter ){
 							long destino;
 							destino = (MiCupula.GetCurrentAzimut() + round(PAYLOAD.toFloat())) ;
 
-							if(destino >360 ){
+							if(destino >=360 ){
 
 								MiCupula.MoveTo(destino - 360);
 
 							}
 
-							if(destino < 0){
+							else if(destino < 0){
 
 								MiCupula.MoveTo(destino + 360);
+
+							}
+
+							else {
+
+								MiCupula.MoveTo(destino);
 
 							}
 
