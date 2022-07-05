@@ -80,13 +80,13 @@ CuadroMando::CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3
 	boton4 = OneButton(pinBoton4,true,true);
 	
 	// Parametros para los botones
-  	boton1.setDebounceTicks(20); // ms de debounce
+  	boton1.setDebounceTicks(50); // ms de debounce
   	boton1.setPressTicks(500); // ms para HOLD
-	boton2.setDebounceTicks(20); // ms de debounce
+	boton2.setDebounceTicks(50); // ms de debounce
   	boton2.setPressTicks(500); // ms para HOLD
-	boton3.setDebounceTicks(20); // ms de debounce
+	boton3.setDebounceTicks(50); // ms de debounce
   	boton3.setPressTicks(500); // ms para HOLD
-	boton4.setDebounceTicks(20); // ms de debounce
+	boton4.setDebounceTicks(50); // ms de debounce
   	boton4.setPressTicks(500); // ms para HOLD
 	
 	//boton1.attachClick(handleClickBoton1);
@@ -101,11 +101,11 @@ CuadroMando::CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3
   		Serial.println("Click Boton 2");
 	});
 
-	boton2.attachClick([]() {
+	boton3.attachClick([]() {
   		Serial.println("Click Boton 3");
 	});
 
-	boton2.attachClick([]() {
+	boton4.attachClick([]() {
   		Serial.println("Click Boton 4");
 	});
 

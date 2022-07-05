@@ -56,7 +56,7 @@ NOTAS SOBRE EL STEPPER Y LA LIBRERIA ACCELSTEPPER
 #include <SPIFFS.h>						// Libreria para sistema de ficheros SPIFFS
 #include <NTPClient.h>					// Para la gestion de la hora por NTP
 #include <WiFiUdp.h>					// Para la conexion UDP con los servidores de hora.
-#include <CuadroMando.h>				// Mi libreria para objetos LED
+//#include <CuadroMando.h>				// Mi libreria para objetos LED
 
 #pragma endregion
 
@@ -1637,7 +1637,7 @@ void TaskMandaTelemetria( void * parameter ){
 void TaskGestionCuadro( void * parameter ){
 
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 25;
+	const TickType_t xFrequency = 5;
 	xLastWakeTime = xTaskGetTickCount ();
 	
 
