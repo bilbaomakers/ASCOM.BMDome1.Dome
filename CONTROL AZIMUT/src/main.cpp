@@ -1756,6 +1756,7 @@ void setup() {
 
 	// Asignar funciones Callback de miCuadroMando
 	miCuadroMando.setEnviaComandoCallback(enviaComando);
+	
 		
 	// Comunicaciones
 	clienteMqtt = AsyncMqttClient();

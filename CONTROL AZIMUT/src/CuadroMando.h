@@ -10,6 +10,11 @@ class CuadroMando{
 		uint8_t arrayPinesEntrada[4];
 		uint8_t arrayPinesSalida[7];
 
+		// La callback esta aqui me va a pasar tambien la instancia del objeto
+		// Me hace falta para llamar a los metodos miembros de esta clase desde las callback de los botones
+		// porque tienen que ser static y luego dentro no puedo hacer nada sin la instancia real del objeto cuadro
+		// porque al ser static el this-> no vale, necesito el objeto.
+		CuadroMando *miInstanciaCuadro;
 		typedef void(*enviaComandoCallback)(String l_comando, String l_payload);	// Callback para enviar comandos a la cola de comandos
 		enviaComandoCallback miEnviaComando = nullptr;								
 
@@ -20,19 +25,23 @@ class CuadroMando{
 		OneButton boton4;
 
 		// Funciones Callback de los botones
-		void handleClickBoton1();
-		void handleHoldBoton1();
-		void handleClickBoton2();
-		void handleHoldBoton2();
-		void handleClickBoton3();
-		void handleHoldBoton3();
-		void handleClickBoton4();
 		/*
+		static void handleClickBoton1();
+		static void handleHoldBoton1();
+		static void handleClickBoton2();
+		static void handleHoldBoton2();
+		static void handleClickBoton3();
+		static void handleHoldBoton3();
+		static void handleClickBoton4();
 		static void handleHoldBoton4();
 		*/
 
-	public:
+		String t_comandoAEnviar = "";
+		String t_parametroAEnviar;
 
+
+	public:
+		
 		CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3, uint8_t pinBoton4, uint8_t pinLedRojo, uint8_t pinLedVerde, uint8_t pinLedAzul, uint8_t pinSalida4, uint8_t pinSalida5, uint8_t pinSalida6, uint8_t pinSalida7);		// Constructor (es la funcion que devuelve un Objeto de esta clase)
 		~CuadroMando() {};	// Destructor (Destruye el objeto, o sea, lo borra de la memoria)
 		void TestSalidas(); // Ciclo de test de las salidas. OJO que es BLOQUEANTE

@@ -69,8 +69,6 @@ CuadroMando::CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3
 		digitalWrite(arrayPinesSalida[i], LOW);
 
 	}
-
-	
 	
 	ledRojo = IndicadorLed(arrayPinesSalida[0], false);
 	ledVerde = IndicadorLed(arrayPinesSalida[1], false);
@@ -94,6 +92,22 @@ CuadroMando::CuadroMando(uint8_t pinBoton1, uint8_t pinBoton2, uint8_t pinBoton3
 	//boton1.attachClick(handleClickBoton1);
 	//boton2.attachClick(handleClickBoton2);
 	
+	// Double Click event attachment with lambda
+	boton1.attachClick([]() {
+  		Serial.println("Click Boton 1");
+	});
+
+	boton2.attachClick([]() {
+  		Serial.println("Click Boton 2");
+	});
+
+	boton2.attachClick([]() {
+  		Serial.println("Click Boton 3");
+	});
+
+	boton2.attachClick([]() {
+  		Serial.println("Click Boton 4");
+	});
 
 
 }
@@ -112,56 +126,59 @@ void CuadroMando::TestSalidas(){
 // Para paras la callback de enviar comandos
 void CuadroMando::setEnviaComandoCallback(enviaComandoCallback ref){
 
+	
 	miEnviaComando = (enviaComandoCallback)ref;
+	
 
 }
 
+/*
 // BOTON1 CLICK
 void CuadroMando::handleClickBoton1(){
-
-	miEnviaComando("InitHW","STD");
-
+		
+	//miEnviaComando("InitHW","STD");
+	
 }
+
 
 // BOTON1 HOLD
 void CuadroMando::handleHoldBoton1(){
 
-	miEnviaComando("InitHW","FORCE");
+	//miEnviaComando("InitHW","FORCE");
 
 }
 
 
 void CuadroMando::handleClickBoton2(){
 		
-	miEnviaComando("SlewRelativeAzimut","-45");
+	//miEnviaComando("SlewRelativeAzimut","-45");
 
 }
 
 void CuadroMando::handleHoldBoton2(){
 
-	miEnviaComando("SetParkHere","NA");
+	//miEnviaComando("SetParkHere","NA");
 
 }
 
 void CuadroMando::handleClickBoton3(){
 
-	miEnviaComando("AbortSlew","NA");
+	//miEnviaComando("AbortSlew","NA");
 
 }
 
 void CuadroMando::handleHoldBoton3(){
 	
-	miEnviaComando("Park","NA");
+	//miEnviaComando("Park","NA");
 
 }
 
 void CuadroMando::handleClickBoton4(){
 
-	miEnviaComando("SlewRelativeAzimut","45");
+	//miEnviaComando("SlewRelativeAzimut","45");
 
 }
 
-/*
 void CuadroMando::handleHoldBoton4(){
 
 }
