@@ -42,8 +42,8 @@ NOTAS SOBRE EL STEPPER Y LA LIBRERIA ACCELSTEPPER
 Funcionalidades del cuadro de usuario.
 
 LUZ ROJA - Avisos
-	Aviso "Seta apretada" si intento HW Init - 3 pulsos medios
-	Aviso AbortSlew - 2 pulsos largos
+	ERROR - 3 pulsos largos (seta apretada al armar, mover sin armar, .....)
+	Aviso AbortSlew - 2 pulsos medios
 	Aviso buscando casa - 1 pulso largo
 	Aviso al terminar de iniciar el sistema - 3 pulsos cortos rapidos
 	Aviso botones - Click 1 pulso corto - Hold 2 pulsos cortos
@@ -56,7 +56,7 @@ LUZ VERDE - Comunicaciones
 LUZ AZUL - ESTADO DEL 
 	HW NOT INIT - Apaga
 	HW OK READY - Encendido
-	HW READY AT PARK - 1 Pulso Segundo
+	SLEWING - 1 pulso por segundo
 
 BOTON1 - AZUL
 	CLICK - Inicializa Hardware STD (busca home)
@@ -142,7 +142,7 @@ unsigned long TIEMPO_TICKER_RAPIDO = 500;
 static const int HORA_LOCAL = 2;
 
 // PARA MODO INSTALADOR. Para que la cupula tenga la funcionalidad reducida lo justo para el instalador
-static const boolean MODO_INSTALADOR = true;
+static const boolean MODO_INSTALADOR = false;
 
 
 #pragma endregion
@@ -265,7 +265,7 @@ class ConfigClass{
 				if (json.success()) {
 					Serial.print("Configuracion del fichero leida: ");
 					json.printTo(Serial);
-				  Serial.println("");
+				    Serial.println("");
 
 					// Leer los valores del MQTT
 					strcpy(mqttserver, json["mqttserver"]);
@@ -669,6 +669,7 @@ void BMDomo1::MoveTo(int grados) {
 
 		// Error Hardware Not Init
 		MiRespondeComandos("SlewToAZimut", "ERR_HNI");
+		ledRojo.Pulsos(1500,500,3);
 		
 	}
 
@@ -755,34 +756,38 @@ void BMDomo1::AbortSlew(){
 
 	// Implementar despues la parte del Shutter tambien.
 
-	MiRespondeComandos("AbortSlew", "CMD_OK");
+	if (Slewing){
 
-	// Parar Stepper de Azimut (se para con aceleracion no a lo burro)
-	controladorStepper.stop();
+		MiRespondeComandos("AbortSlew", "CMD_OK");
+		ledRojo.Pulsos(500,500,2);
 
-	// Esperar 5 segundos a que se pare el tema y si no error
-	int TiempoEspera;
-	for (TiempoEspera = 0; TiempoEspera < 5; TiempoEspera++){
+		// Parar Stepper de Azimut (se para con aceleracion no a lo burro)
+		controladorStepper.stop();
 
-		if (controladorStepper.isRunning() == false){
+		// Esperar 5 segundos a que se pare el tema y si no error
+		int TiempoEspera;
+		for (TiempoEspera = 0; TiempoEspera < 5; TiempoEspera++){
 
-			// Por si hemos parado estando aparcando o buscando casa
-			Aparcando = false;
-			BuscandoCasa = false;
+			if (controladorStepper.isRunning() == false){
 
-			// Responder OK.
-			MiRespondeComandos("AbortSlew", "STOPPED");
-			return;
+				// Por si hemos parado estando aparcando o buscando casa
+				Aparcando = false;
+				BuscandoCasa = false;
 
-		}
+				// Responder OK.
+				MiRespondeComandos("AbortSlew", "STOPPED");
+				return;
 
-		// Esto, que es KAKA, aqui no importa, que la Task Procesacomandos se espere que esto es importante
-		delay(1000);
+			}
+
+			// Esto, que es KAKA, aqui no importa, que la Task Procesacomandos se espere que esto es importante
+			delay(1000);
 
 	}
 
 	MiRespondeComandos("AbortSlew", "ERR");
-		
+	
+	}
 }
 
 void BMDomo1::SetPark(int l_ParkPos){
@@ -929,18 +934,21 @@ boolean BMDomo1::SalvaConfig(){
 		return false;
 	}
 
-	if (DomoConfigFile.print(MiEstadoJson(1))){
+	else{
+	
+		if (DomoConfigFile.print(MiEstadoJson(1))){
 
-		return true;
+			DomoConfigFile.close();
+			return true;
 
+		}
+
+		else {
+
+			return false;
+
+		}
 	}
-
-	else {
-
-		return false;
-
-	}
-
 }
 
 boolean BMDomo1::LeeConfig(){
@@ -966,18 +974,36 @@ boolean BMDomo1::LeeConfig(){
 				
 				return true;
 
+			}	
+
+			else{
+
+				Serial.println("El fichero de config de la cupula esta corrupto");
+				return false;
+
 			}
 
+			
+
+		}
+
+		else{
+
+			Serial.println("No se puede leer el fichero de config de la cupula");
 			return false;
 
 		}
 
+	}
+
+	else{
+
+		Serial.println("No se encuentra el fichero de config de la cupula");
 		return false;
 
 	}
 
-	return false;
-
+	
 }
 
 #pragma endregion
@@ -1028,7 +1054,7 @@ void WiFiEventCallBack(WiFiEvent_t event) {
     	case SYSTEM_EVENT_STA_GOT_IP:
      	   	Serial.print("Conexion WiFi: Conetado. IP: ");
       	  	Serial.println(WiFi.localIP());
-			//miCuadroMando.ledVerde.Ciclo(200,200,1000,2);
+			ledVerde.Ciclo(200,200,1000,2);
 			clienteNTP.begin();
 			if (clienteNTP.update()){
 
@@ -1045,7 +1071,7 @@ void WiFiEventCallBack(WiFiEvent_t event) {
         	break;
     	case SYSTEM_EVENT_STA_DISCONNECTED:
         	Serial.println("Conexion WiFi: Desconetado");
-			//miCuadroMando.ledVerde.Ciclo(1000,1000,1000,1);
+			ledVerde.Ciclo(1000,500,500,1);
         	break;
 		default:
 			break;
@@ -1383,7 +1409,6 @@ void TaskProcesaComandos ( void * parameter ){
 						// no solo no importa sino que esta bien que no se procesen mas hasta que haya una respuesta de este
 						// comando ya que es muy importante.
 						MiCupula.AbortSlew();
-						ledRojo.Pulsos(1500,500,2);
 
 					}
 
@@ -1480,6 +1505,13 @@ void TaskProcesaComandos ( void * parameter ){
 
 						String(PAYLOAD).toCharArray(MiConfig.mqttserver, sizeof(MiConfig.mqttserver));
 						Serial.println("MQTTSrv OK: " + PAYLOAD);
+
+					}
+
+					else if (COMANDO == "MQTTPort"){
+
+						String(PAYLOAD).toCharArray(MiConfig.mqttport, sizeof(MiConfig.mqttport));
+						Serial.println("MQTTPort OK: " + PAYLOAD);
 
 					}
 
@@ -1728,25 +1760,18 @@ void TaskGestionCuadro( void * parameter ){
 
 			if (MiCupula.Slewing){
 
-				if (ledAzul.EstadoLed != IndicadorLed::TipoEstadoLed::LED_CICLO){
+				if (ledAzul.EstadoLed == IndicadorLed::TipoEstadoLed::LED_ENCENDIDO){
 
-					ledAzul.Ciclo(500,250,250,1);
+					ledAzul.Ciclo(250,125,125,1);
 
 				}
 				
 
 			}
 
-			else {
-
-
-				
-				if (ledAzul.EstadoLed != IndicadorLed::TipoEstadoLed::LED_ENCENDIDO){
-
-					ledAzul.Encender();
-
-				}
-				
+			else {			
+			
+				ledAzul.Encender();	
 								
 			}
 
