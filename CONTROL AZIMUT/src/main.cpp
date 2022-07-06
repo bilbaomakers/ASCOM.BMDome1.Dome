@@ -37,6 +37,43 @@ NOTAS SOBRE EL STEPPER Y LA LIBRERIA ACCELSTEPPER
 - ESP32 tiene 4 timers que funcionan a una frecuencia de 80 MHz (Ole!). Nos sobra "velocidad" que te cagas aqui
 - No tengo ni idea de cuantos ciclos de reloj usa el run() de la libreria (lo investigare a ver)
 
+################################################################################
+
+Funcionalidades del cuadro de usuario.
+
+LUZ ROJA - Avisos
+	Aviso "Seta apretada" si intento HW Init - 3 pulsos medios
+	Aviso AbortSlew - 2 pulsos largos
+	Aviso buscando casa - 1 pulso largo
+	Aviso al terminar de iniciar el sistema - 3 pulsos cortos rapidos
+	Aviso botones - Click 1 pulso corto - Hold 2 pulsos cortos
+
+LUZ VERDE - Comunicaciones
+	Conectando a la wifi - 1 pulso por segundo
+	Conectando al MQTT - 2 pulsos cortos y 1 segundo idle
+	Comunicaciones OK - Permanente
+
+LUZ AZUL - ESTADO DEL 
+	HW NOT INIT - Apaga
+	HW OK READY - Encendido
+	HW READY AT PARK - 1 Pulso Segundo
+
+BOTON1 - AZUL
+	CLICK - Inicializa Hardware STD (busca home)
+	HOLD - Inicializa Hardware FORCE (sin buscar home)
+	
+BOTON2 - VERDE
+	CLICK - Mover a 90 (SlewToAZimut)
+	HOLD - Set Park en la posicion actual (SetParkHere)
+	
+BOTON3 - ROJO
+	CLICK - Parada Normal (AbortSlew)
+	HOLD - Aparcar (Park)
+
+BOTON4 - VERDE
+	CLICK - Mover a 270 (SlewToAZimut)
+	HOLD - 
+
 */
 
 #pragma endregion
@@ -57,6 +94,8 @@ NOTAS SOBRE EL STEPPER Y LA LIBRERIA ACCELSTEPPER
 #include <NTPClient.h>					// Para la gestion de la hora por NTP
 #include <WiFiUdp.h>					// Para la conexion UDP con los servidores de hora.
 //#include <CuadroMando.h>				// Mi libreria para objetos LED
+#include <OneButton.h> 					// Para los botones de usuario: https://github.com/mathertel/OneButton
+#include <IndicadorLed.h>				// Mi libreria para Leds
 
 #pragma endregion
 
@@ -140,7 +179,14 @@ NTPClient clienteNTP(udpNtp, "europe.pool.ntp.org", HORA_LOCAL * 3600, 3600);
 extern "C" {uint8_t temprature_sens_read();}
 
 // Cuado Mando
-CuadroMando miCuadroMando(MECANICA_BOTONPANEL1, MECANICA_BOTONPANEL2, MECANICA_BOTONPANEL3, MECANICA_BOTONPANEL4, MECANICA_LEDROJO, MECANICA_LEDVERDE, MECANICA_LEDAZUL, MECANICA_SALIDA4, MECANICA_SALIDA5, MECANICA_SALIDA6, MECANICA_SALIDA7);
+
+IndicadorLed ledRojo (MECANICA_LEDROJO, false);
+IndicadorLed ledVerde (MECANICA_LEDVERDE, false);
+IndicadorLed ledAzul (MECANICA_LEDAZUL, false);
+OneButton boton1 (MECANICA_BOTONPANEL1,true,true);
+OneButton boton2 (MECANICA_BOTONPANEL2,true,true);
+OneButton boton3 (MECANICA_BOTONPANEL3,true,true);
+OneButton boton4 (MECANICA_BOTONPANEL4,true,true);
 
 #pragma endregion
 
@@ -946,6 +992,28 @@ BMDomo1 MiCupula(MECANICA_SENSOR_HOME);
 
 #pragma endregion
 
+#pragma region Funciones Auxiliares
+
+// Enviar comandos a la cola de comandos formateados en JSON para ser procesados por la tarea procesa comandos
+void enviaComando (String l_comando, String l_payload){
+
+	
+	// Formatear el JSON del comando y mandarlo a la cola de comandos.
+	DynamicJsonBuffer jsonBuffer;
+	JsonObject& ObjJson = jsonBuffer.createObject();
+	ObjJson.set("COMANDO",l_comando);
+	ObjJson.set("PAYLOAD",l_payload);
+
+	char JSONmessageBuffer[100];
+	ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+			
+	// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
+	xQueueSend(colaComandos, &JSONmessageBuffer, 0);
+
+}
+
+#pragma endregion
+
 #pragma region Funciones de gestion de las conexiones Wifi
 
 // Funcion ante un evento de la wifi
@@ -995,7 +1063,7 @@ void onMqttConnect(bool sessionPresent) {
 
 	Serial.println("Conexion MQTT: Conectado. Core:" + String(xPortGetCoreID()));
 	
-	miCuadroMando.ledVerde.Encender();
+	ledVerde.Encender();
 
 	bool susflag = false;
 	bool lwtflag = false;
@@ -1090,18 +1158,8 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 			int Indice2 = s_topic.lastIndexOf("/");
 			String Comando = s_topic.substring(Indice2 + 1);
 
-			DynamicJsonBuffer jsonBuffer;
-			JsonObject& ObjJson = jsonBuffer.createObject();
-			ObjJson.set("COMANDO",Comando);
-			ObjJson.set("PAYLOAD",s_payload);
+			enviaComando(Comando,s_payload);
 
-			char JSONmessageBuffer[100];
-			ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
-			//Serial.println(String(ObjJson.measureLength()));
-
-			// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-			xQueueSend(colaComandos, &JSONmessageBuffer, 0);
-			
 		}
 
 	//}
@@ -1164,25 +1222,57 @@ void MandaTelemetria() {
 
 #pragma endregion
 
-#pragma region Otras funciones Auxiliares
+#pragma region Funciones Cuadro de Mando de Usuario
 
-// Para enviar comandos a la cola de comandos. Para uso como callback en la clase CuadroMando
-void enviaComando (String l_comando, String l_payload){
-
+void handleClickBoton1(){
+		
+	enviaComando("InitHW","STD");
 	
-	// Formatear el JSON del comando y mandarlo a la cola de comandos.
-	DynamicJsonBuffer jsonBuffer;
-	JsonObject& ObjJson = jsonBuffer.createObject();
-	ObjJson.set("COMANDO",l_comando);
-	ObjJson.set("PAYLOAD",l_payload);
+}
 
-	char JSONmessageBuffer[100];
-	ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
-			
-	// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-	xQueueSend(colaComandos, &JSONmessageBuffer, 0);
+
+// BOTON1 HOLD
+void handleHoldBoton1(){
+
+	enviaComando("InitHW","FORCE");
 
 }
+
+
+void handleClickBoton2(){
+		
+	enviaComando("SlewRelativeAzimut","-45");
+
+}
+
+void handleHoldBoton2(){
+
+	enviaComando("SetParkHere","NA");
+
+}
+
+void handleClickBoton3(){
+
+	enviaComando("AbortSlew","NA");
+
+}
+
+void handleHoldBoton3(){
+	
+	enviaComando("Park","NA");
+
+}
+
+void handleClickBoton4(){
+
+	enviaComando("SlewRelativeAzimut","45");
+
+}
+
+void handleHoldBoton4(){
+
+}
+
 
 #pragma endregion
 
@@ -1293,7 +1383,7 @@ void TaskProcesaComandos ( void * parameter ){
 						// no solo no importa sino que esta bien que no se procesen mas hasta que haya una respuesta de este
 						// comando ya que es muy importante.
 						MiCupula.AbortSlew();
-						miCuadroMando.ledRojo.Pulsos(1500,500,2);
+						ledRojo.Pulsos(1500,500,2);
 
 					}
 
@@ -1303,7 +1393,7 @@ void TaskProcesaComandos ( void * parameter ){
 
 							
 						MiCupula.FindHome();
-						miCuadroMando.ledRojo.Pulsos(1500,500,1);
+						ledRojo.Pulsos(1500,500,1);
 
 					}
 					
@@ -1586,17 +1676,7 @@ void TaskComandosSerieRun( void * parameter ){
 				comando = strtok_r(sr_buffer, sr_delim, &sr_last_token);
 				parametro1 = strtok_r(NULL, sr_delim, &sr_last_token);
 
-				// Formatear el JSON del comando y mandarlo a la cola de comandos.
-				DynamicJsonBuffer jsonBuffer;
-				JsonObject& ObjJson = jsonBuffer.createObject();
-				ObjJson.set("COMANDO",comando);
-				ObjJson.set("PAYLOAD",parametro1);
-
-				char JSONmessageBuffer[100];
-				ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
-			
-				// Mando el comando a la cola de comandos recibidos que luego procesara la tarea manejadordecomandos.
-				xQueueSend(colaComandos, &JSONmessageBuffer, 0);
+				enviaComando(comando,parametro1);
 				
 				// Reiniciar los buffers
 				sr_buffer[0] = '\0';
@@ -1648,9 +1728,9 @@ void TaskGestionCuadro( void * parameter ){
 
 			if (MiCupula.Slewing){
 
-				if (miCuadroMando.ledAzul.EstadoLed != IndicadorLed::TipoEstadoLed::LED_CICLO){
+				if (ledAzul.EstadoLed != IndicadorLed::TipoEstadoLed::LED_CICLO){
 
-					miCuadroMando.ledAzul.Ciclo(500,250,250,1);
+					ledAzul.Ciclo(500,250,250,1);
 
 				}
 				
@@ -1661,9 +1741,9 @@ void TaskGestionCuadro( void * parameter ){
 
 
 				
-				if (miCuadroMando.ledAzul.EstadoLed != IndicadorLed::TipoEstadoLed::LED_ENCENDIDO){
+				if (ledAzul.EstadoLed != IndicadorLed::TipoEstadoLed::LED_ENCENDIDO){
 
-					miCuadroMando.ledAzul.Encender();
+					ledAzul.Encender();
 
 				}
 				
@@ -1674,16 +1754,22 @@ void TaskGestionCuadro( void * parameter ){
 		
 		else{
 
-			if (miCuadroMando.ledAzul.EstadoLed != IndicadorLed::LED_APAGADO){
+			if (ledAzul.EstadoLed != IndicadorLed::LED_APAGADO){
 
-				miCuadroMando.ledAzul.Apagar();
+				ledAzul.Apagar();
 
 			}
 			
 
 		}
 		
-		miCuadroMando.Run();
+		boton1.tick();
+		boton2.tick();
+		boton3.tick();
+		boton4.tick();
+		ledRojo.RunFast();
+		ledVerde.RunFast();
+		ledAzul.RunFast();
 
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
@@ -1754,16 +1840,31 @@ void setup() {
 	// Asignar funciones Callback de Micupula
 	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
 
-	// Asignar funciones Callback de miCuadroMando
-	miCuadroMando.setEnviaComandoCallback(enviaComando);
-	
-		
+	// Parametros para los botones
+  	boton1.setDebounceTicks(50); // ms de debounce
+  	boton1.setPressTicks(500); // ms para HOLD
+	boton2.setDebounceTicks(50); // ms de debounce
+  	boton2.setPressTicks(500); // ms para HOLD
+	boton3.setDebounceTicks(50); // ms de debounce
+  	boton3.setPressTicks(500); // ms para HOLD
+	boton4.setDebounceTicks(50); // ms de debounce
+  	boton4.setPressTicks(500); // ms para HOLD
+
+	boton1.attachClick(handleClickBoton1);
+	boton1.attachLongPressStart(handleHoldBoton1);
+	boton2.attachClick(handleClickBoton2);
+	boton2.attachLongPressStart(handleHoldBoton2);
+	boton3.attachClick(handleClickBoton3);
+	boton3.attachLongPressStart(handleHoldBoton3);
+	boton4.attachClick(handleClickBoton4);
+	boton4.attachLongPressStart(handleHoldBoton4);
+
 	// Comunicaciones
 	clienteMqtt = AsyncMqttClient();
 	WiFi.onEvent(WiFiEventCallBack);
 
 	// Lez verde al modo Sin conexion red.
-	miCuadroMando.ledVerde.Ciclo(1000,500,500,1);
+	ledVerde.Ciclo(1000,500,500,1);
 	// Iniciar la Wifi
 
 	if (!MODO_INSTALADOR){
@@ -1870,7 +1971,7 @@ void setup() {
 
 	// Init Completado.
 	Serial.println("Setup Completado.");
-	miCuadroMando.ledRojo.Pulsos(50,50,3);
+	ledRojo.Pulsos(50,50,3);
 	
 	
 }
