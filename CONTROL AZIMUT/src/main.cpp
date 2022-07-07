@@ -93,7 +93,6 @@ BOTON4 - VERDE
 #include <SPIFFS.h>						// Libreria para sistema de ficheros SPIFFS
 #include <NTPClient.h>					// Para la gestion de la hora por NTP
 #include <WiFiUdp.h>					// Para la conexion UDP con los servidores de hora.
-//#include <CuadroMando.h>				// Mi libreria para objetos LED
 #include <OneButton.h> 					// Para los botones de usuario: https://github.com/mathertel/OneButton
 #include <IndicadorLed.h>				// Mi libreria para Leds
 
@@ -147,13 +146,54 @@ static const boolean MODO_INSTALADOR = false;
 
 #pragma endregion
 
-#pragma region Objetos
+#pragma region Delaraciones
+
+// Para la Cupula
+bool Inicializando;							// Para saber que estamos ejecutando el comando INITHW
+bool BuscandoCasa;							// Para saber que estamos ejecutando el comando FINDHOME
+bool Aparcando;								// Para saber si estamos yendo a aparcar
+float TotalPasos;							// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
+Bounce Debouncer_HomeSwitch = Bounce(); 	// Objeto debouncer para el switch HOME
+bool HayQueSalvar;							// 
+long GradosToPasos(long grados);			// Convierte Grados a Pasos segun la mecanica
+long PasosToGrados(long pasos);		  		// Convierte pasos a grados segun la mecanica
+
+boolean SalvaConfig();
+
+//  Variables Publicas
+String HardwareInfo;						// Identificador del HardWare y Software
+bool ComOK;									// Si la wifi y la conexion MQTT esta OK
+bool DriverOK;								// Si estamos conectados al driver del PC y esta OK
+bool HardwareOK;							// Si nosotros estamos listos para todo (para informar al driver del PC)
+bool Slewing;								// Si alguna parte del Domo esta moviendose
+bool AtHome;								// Si esta parada en HOME
+bool AtPark;								// Si esta en la posicion de PARK									
+int ParkPos;								// Para almacenar la posicion de Park en la clase
+
+// Funciones Publicas
+String MiEstadoJson(int categoria);			// Devuelve un JSON con los estados en un array de 100 chars (la libreria MQTT no puede con mas de 100)
+void MoveTo(int azimut);					// Mover la cupula a un azimut
+void IniciaCupula(String parametros);		// Inicializar la cupula
+void ApagaCupula(String parametros);		// Apagar la cupula normalmente.
+void FindHome();							// Mueve la cupula a Home
+long GetCurrentAzimut();					// Devuelve el azimut actual de la cupula
+void Run();									// Actualiza las propiedades de estado de este objeto en funcion del estado de motores y sensores
+void Connected();							// Para implementar la propiedad-metodo Connected
+void Connected(boolean status);				// Para implementar la propiedad-metodo Connected
+void AbortSlew();
+void SetPark(int l_ParkPos);
+void Park();
+boolean LeeConfig();
+		
+
+
 
 // Para la conexion MQTT
 AsyncMqttClient  clienteMqtt;
 
 // Controlador Stepper
 AccelStepper controladorStepper;
+
 
 // Los manejadores para las tareas. El resto de las cosas que hace nuestro controlador que son un poco mas flexibles que la de los pulsos del Stepper
 TaskHandle_t tHandleTaskCupulaRun,tHandleTaskProcesaComandos,tHandleTaskComandosSerieRun,tHandleTaskMandaTelemetria,tHandleTaskGestionRed,tHandleTaskEnviaRespuestas, tHandleTaskGestionCuadro;	
@@ -187,6 +227,8 @@ OneButton boton1 (MECANICA_BOTONPANEL1,true,true);
 OneButton boton2 (MECANICA_BOTONPANEL2,true,true);
 OneButton boton3 (MECANICA_BOTONPANEL3,true,true);
 OneButton boton4 (MECANICA_BOTONPANEL4,true,true);
+
+
 
 #pragma endregion
 
@@ -354,79 +396,10 @@ class ConfigClass{
 
 #pragma endregion
 
-#pragma region CLASE BMDomo1 - Clase principial para el objeto que representa la cupula, sus estados, propiedades y acciones
+#pragma region Funciones Cupula
 
-// Una clase tiene 2 partes:
-// La primera es la definicion de todas las propiedades y metodos, publicos o privados.
-// La segunda es la IMPLEMENTACION de esos metodos o propiedades (que hacen). En C++ mas que nada de los METODOS (que son basicamente funciones)
-
-// Definicion
-class BMDomo1{
-
-#pragma region DEFINICIONES BMDomo1
-private:
-
-	// Variables Internas para uso de la clase
-	bool Inicializando;						// Para saber que estamos ejecutando el comando INITHW
-	bool BuscandoCasa;						// Para saber que estamos ejecutando el comando FINDHOME
-	bool Aparcando;								// Para saber si estamos yendo a aparcar
-	float TotalPasos;							// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
-	Bounce Debouncer_HomeSwitch = Bounce(); // Objeto debouncer para el switch HOME
-	bool HayQueSalvar;
-		
-	// Funciones Callback. Son funciones "especiales" que yo puedo definir FUERA de la clase y disparar DENTRO (GUAY).
-	// Por ejemplo "una funcion que envie las respuestas a los comandos". Aqui no tengo por que decir ni donde ni como va a enviar esas respuestas.
-	// Solo tengo que definirla y cuando cree el objeto de esta clase en mi programa, creo la funcion con esta misma estructura y se la "paso" a la clase
-	// que la usara como se usa cualquier otra funcion y ella sabra que hacer
-
-	typedef void(*RespondeComandoCallback)(String comando, String respuesta);			// Definir como ha de ser la funcion de Callback (que le tengo que pasar y que devuelve)
-	RespondeComandoCallback MiRespondeComandos = nullptr;								// Definir el objeto que va a contener la funcion que vendra de fuera AQUI en la clase.
-
-	long GradosToPasos(long grados);													// Convierte Grados a Pasos segun la mecanica
-	long PasosToGrados(long pasos);														// Convierte pasos a grados segun la mecanica
-	
-	boolean SalvaConfig();
-
-public:
-
-	BMDomo1(uint8_t PinHome);		// Constructor (es la funcion que devuelve un Objeto de esta clase)
-	~BMDomo1() {};	// Destructor (Destruye el objeto, o sea, lo borra de la memoria)
-
-
-	//  Variables Publicas
-	String HardwareInfo;				// Identificador del HardWare y Software
-	bool ComOK;									// Si la wifi y la conexion MQTT esta OK
-	bool DriverOK;							// Si estamos conectados al driver del PC y esta OK
-	bool HardwareOK;						// Si nosotros estamos listos para todo (para informar al driver del PC)
-	bool Slewing;								// Si alguna parte del Domo esta moviendose
-	bool AtHome;								// Si esta parada en HOME
-	bool AtPark;								// Si esta en la posicion de PARK									
-	int ParkPos;								// Para almacenar la posicion de Park en la clase
-
-	// Funciones Publicas
-	String MiEstadoJson(int categoria);								// Devuelve un JSON con los estados en un array de 100 chars (la libreria MQTT no puede con mas de 100)
-	void MoveTo(int azimut);										// Mover la cupula a un azimut
-	void IniciaCupula(String parametros);							// Inicializar la cupula
-	void ApagaCupula(String parametros);							// Apagar la cupula normalmente.
-	void FindHome();												// Mueve la cupula a Home
-	long GetCurrentAzimut();									    // Devuelve el azimut actual de la cupula
-	void Run();														// Actualiza las propiedades de estado de este objeto en funcion del estado de motores y sensores
-	void SetRespondeComandoCallback(RespondeComandoCallback ref);	// Definir la funcion para pasarnos la funcion de callback del enviamensajes
-	void Connected();					// Para implementar la propiedad-metodo Connected
-	void Connected(boolean status);					// Para implementar la propiedad-metodo Connected
-	void AbortSlew();
-	void SetPark(int l_ParkPos);
-	void Park();
-	boolean LeeConfig();
-
-};
-
-#pragma endregion
-
-#pragma region IMPLEMENTACIONES BMDomo1
-
-// Constructor. Lo que sea que haya que hacer antes de devolver el objeto de esta clase al creador.
-BMDomo1::BMDomo1(uint8_t PinHome) {	
+// Para Inicializar variables y demas.
+void InitObjCupula() {	
 
 	HardwareInfo = "BMDome1.HWAz.1.0";
 	Inicializando = false;
@@ -440,25 +413,23 @@ BMDomo1::BMDomo1(uint8_t PinHome) {
 	Aparcando = false;
 	TotalPasos = (float)(MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR) / (float)(MECANICA_DIENTES_PINON_ATAQUE);
 	// Inicializacion del sensor de HOMME
-	pinMode(PinHome, INPUT_PULLUP);
-	Debouncer_HomeSwitch.attach(PinHome);
+	pinMode(MECANICA_SENSOR_HOME, INPUT_PULLUP);
+	Debouncer_HomeSwitch.attach(MECANICA_SENSOR_HOME);
 	Debouncer_HomeSwitch.interval(5);
 	ParkPos = 0;
 	HayQueSalvar = false;
 
 }
 
-#pragma region Funciones Privadas
-
 // Traduce Grados a Pasos segun la mecanica
-long BMDomo1::GradosToPasos(long grados) {
+long GradosToPasos(long grados) {
 
 	return round((float)(grados * TotalPasos) / 360);
 	
 }
 
 // Traduce Pasos a Grados segun la mecanica
-long BMDomo1::PasosToGrados(long pasos) {
+long PasosToGrados(long pasos) {
 
 	// Con una pequeña correccion porque a veces si se pide la posicion por encima de 359.5 devuelve 360 (por el redondeo) y no vale, tiene que ser 0
 	long t_grados = round((float)(pasos * 360) / (float)TotalPasos);
@@ -476,21 +447,8 @@ long BMDomo1::PasosToGrados(long pasos) {
 	}
 }
 
-#pragma endregion
-
-
-#pragma region Funciones Publicas
-
-
-// Pasar a esta clase la funcion callback de fuera. Me la pasan desde el programa con el metodo SetRespondeComandoCallback
-void BMDomo1::SetRespondeComandoCallback(RespondeComandoCallback ref) {
-
-	MiRespondeComandos = (RespondeComandoCallback)ref;
-
-}
-
 // Metodo que devuelve un JSON con el estado
-String BMDomo1::MiEstadoJson(int categoria) {
+String MiEstadoJson(int categoria) {
 
 	DynamicJsonBuffer jBuffer;
 	JsonObject& jObj = jBuffer.createObject();
@@ -546,13 +504,13 @@ String BMDomo1::MiEstadoJson(int categoria) {
 }
 
 // Metodos (funciones). TODAS Salvo la RUN() deben ser ASINCRONAS. Jamas se pueden quedar uno esperando. Esperar a lo bobo ESTA PROHIBIDISISISISMO, tenemos MUCHAS cosas que hacer ....
-void BMDomo1::IniciaCupula(String parametros) {
+void IniciaCupula(String parametros) {
 
 	// Esto es para inicializar forzado si le pasamos parametro FORCE
 	if (parametros == "FORCE") {
 
 		HardwareOK = true;
-		MiRespondeComandos("InitHW", "READY");
+		MandaRespuesta("InitHW", "READY");
 		controladorStepper.enableOutputs();
 		
 	}
@@ -577,13 +535,13 @@ void BMDomo1::IniciaCupula(String parametros) {
 }
 
 // Funcion que da orden de mover la cupula para esperar HOME.
-void BMDomo1::FindHome() {
+void FindHome() {
 
 	
 	// Si la cupula no esta inicializada no hacemos nada mas que avisar
 	if (!HardwareOK && !Inicializando) {
 
-		MiRespondeComandos("FindHome", "ERR_HNI");
+		MandaRespuesta("FindHome", "ERR_HNI");
 		
 	}
 	
@@ -594,7 +552,7 @@ void BMDomo1::FindHome() {
 		if (!Slewing && AtHome) {
 
 			// Caramba ya estamos en Home y Parados No tenemos que hacer nada
-			MiRespondeComandos("FindHome", "ATHOME");
+			MandaRespuesta("FindHome", "ATHOME");
 			return;
 
 		}
@@ -604,7 +562,7 @@ void BMDomo1::FindHome() {
 
 		
 			// Que nos estamos moviendo leñe no atosigues .....
-			MiRespondeComandos("FindHome", "ERR_SLW");
+			MandaRespuesta("FindHome", "ERR_SLW");
 			return;
 
 		}
@@ -612,7 +570,7 @@ void BMDomo1::FindHome() {
 		// Y si estamos parados y NO en Home .....
 		else if (!Slewing && !AtHome){
 
-			MiRespondeComandos("FindHome", "CMD_OK");
+			MandaRespuesta("FindHome", "CMD_OK");
 
 			// Pues aqui si que hay que movernos hasta que encontremos casa y pararnos.
 			// Aqui nos movemos (de momento a lo burro a dar media vuelta entera)
@@ -628,7 +586,7 @@ void BMDomo1::FindHome() {
 }
 
 // Funcion que devuelva el azimut actual de la cupula
-long BMDomo1::GetCurrentAzimut() {
+long GetCurrentAzimut() {
 
 	// Si los pasòs totales del stepper son mas o igual de los maximos (mas de 360º) restamos una vuelta. Luego en el loop cuando estemos parados corregiremos el valor de la libreria stepper
 	
@@ -661,14 +619,14 @@ long BMDomo1::GetCurrentAzimut() {
 }
 
 // Funcion para mover la cupula a una posicion Azimut concreta
-void BMDomo1::MoveTo(int grados) {
+void MoveTo(int grados) {
 
 
 	// Si la cupula no esta inicializada no hacemos nada mas que avisar
 	if (!HardwareOK && !Inicializando) {
 
 		// Error Hardware Not Init
-		MiRespondeComandos("SlewToAZimut", "ERR_HNI");
+		MandaRespuesta("SlewToAZimut", "ERR_HNI");
 		ledRojo.Pulsos(1500,500,3);
 		
 	}
@@ -676,7 +634,7 @@ void BMDomo1::MoveTo(int grados) {
 	else if (Slewing) {
 
 
-		MiRespondeComandos("SlewToAZimut", "ERR_SLW");
+		MandaRespuesta("SlewToAZimut", "ERR_SLW");
 
 	}
 
@@ -714,7 +672,7 @@ void BMDomo1::MoveTo(int grados) {
 				
 			}
 			
-			MiRespondeComandos("SlewToAZimut", "CMD_OK");
+			MandaRespuesta("SlewToAZimut", "CMD_OK");
 			
 			controladorStepper.move(GradosToPasos(amover));
 				
@@ -724,7 +682,7 @@ void BMDomo1::MoveTo(int grados) {
 
 		else {
 			
-			MiRespondeComandos("SlewToAZimut", "ERR_OR");
+			MandaRespuesta("SlewToAZimut", "ERR_OR");
 
 		}
 		
@@ -734,13 +692,13 @@ void BMDomo1::MoveTo(int grados) {
 
 }
 
-void BMDomo1::Connected(){
+void Connected(){
 
-	MiRespondeComandos("Connected", DriverOK?"TRUE":"FALSE");
+	MandaRespuesta("Connected", DriverOK?"TRUE":"FALSE");
 
 }
 
-void BMDomo1::Connected(boolean status){
+void Connected(boolean status){
 
 	if (status != DriverOK){
 
@@ -748,17 +706,17 @@ void BMDomo1::Connected(boolean status){
 
 	}
 
-			MiRespondeComandos("Connected", DriverOK?"TRUE":"FALSE");
+			MandaRespuesta("Connected", DriverOK?"TRUE":"FALSE");
 
 }
 
-void BMDomo1::AbortSlew(){
+void AbortSlew(){
 
 	// Implementar despues la parte del Shutter tambien.
 
 	if (Slewing){
 
-		MiRespondeComandos("AbortSlew", "CMD_OK");
+		MandaRespuesta("AbortSlew", "CMD_OK");
 		ledRojo.Pulsos(500,500,2);
 
 		// Parar Stepper de Azimut (se para con aceleracion no a lo burro)
@@ -775,7 +733,7 @@ void BMDomo1::AbortSlew(){
 				BuscandoCasa = false;
 
 				// Responder OK.
-				MiRespondeComandos("AbortSlew", "STOPPED");
+				MandaRespuesta("AbortSlew", "STOPPED");
 				return;
 
 			}
@@ -785,39 +743,39 @@ void BMDomo1::AbortSlew(){
 
 	}
 
-	MiRespondeComandos("AbortSlew", "ERR");
+	MandaRespuesta("AbortSlew", "ERR");
 	
 	}
 }
 
-void BMDomo1::SetPark(int l_ParkPos){
+void SetPark(int l_ParkPos){
 
 	if (l_ParkPos >= 0 && l_ParkPos <360){
 
 		ParkPos = l_ParkPos;
 		HayQueSalvar = true;
-		MiRespondeComandos("SetPark", "SET_OK");
+		MandaRespuesta("SetPark", "SET_OK");
 		
 	}
 
 	else {
 
-		MiRespondeComandos("SetPark", "ERR_OR");
+		MandaRespuesta("SetPark", "ERR_OR");
 
 	}
 
 }
 
-void BMDomo1::Park(){
+void Park(){
 
-	this->AbortSlew();
-	this->MoveTo(this->ParkPos);
-	this->Aparcando = true;
+	AbortSlew();
+	MoveTo(ParkPos);
+	Aparcando = true;
 
 }
 
 // Esta funcion se lanza desde el loop. Es la que hace las comprobaciones. No debe atrancarse nunca tampoco (ni esta ni ninguna)
-void BMDomo1::Run() {
+void RunCupula() {
 
 	// Actualizar la lectura de los switches
 	Debouncer_HomeSwitch.update();
@@ -845,12 +803,12 @@ void BMDomo1::Run() {
 
 
 				BuscandoCasa = false;							// Cambiar el flag interno para saber que "ya no estamos buscando casa, ya hemos llegado"
-				MiRespondeComandos("FindHome", "ATHOME");		// Responder al comando FINDHOME
+				MandaRespuesta("FindHome", "ATHOME");		// Responder al comando FINDHOME
 
 				if (Inicializando) {							// Si ademas estabamos haciendo esto desde el comando INITHW ....
 
 					Inicializando = false;						// Cambiar la variable interna para saber que "ya no estamos inicializando, ya hemos terminado"
-					MiRespondeComandos("InitHW", "READY");	// Responder al comando INITHW
+					MandaRespuesta("InitHW", "READY");	// Responder al comando INITHW
 
 				}
 
@@ -890,15 +848,15 @@ void BMDomo1::Run() {
 		}
 
 		// Actualizar la propiedad AtPark si estamos parados en el azimut del Park
-		if (this->GetCurrentAzimut() == this->ParkPos){
+		if (GetCurrentAzimut() == ParkPos){
 			
-			this->AtPark = true;
+			AtPark = true;
 
-			if (this->Aparcando == true){
+			if (Aparcando == true){
 
-				this->HardwareOK = false;
-				this->Aparcando = false;
-				MiRespondeComandos("Park","PRK_DONE");
+				HardwareOK = false;
+				Aparcando = false;
+				MandaRespuesta("Park","PRK_DONE");
 			
 			}
 
@@ -906,7 +864,7 @@ void BMDomo1::Run() {
 
 		else{
 
-			this->AtPark = false;
+			AtPark = false;
 
 		}
 
@@ -917,7 +875,7 @@ void BMDomo1::Run() {
 	// Un supuesto raro, pero eso es que no hemos conseguido detectar el switch home
 	if (!Slewing && BuscandoCasa) {
 
-		MiRespondeComandos("FindHome", "ERR_HSF");
+		MandaRespuesta("FindHome", "ERR_HSF");
 		BuscandoCasa = false;
 		Inicializando = false;
 				
@@ -925,7 +883,7 @@ void BMDomo1::Run() {
 
 }
 
-boolean BMDomo1::SalvaConfig(){
+boolean SalvaConfig(){
 
 	File DomoConfigFile = SPIFFS.open("/BMDomo1.json", "w");
 
@@ -951,7 +909,7 @@ boolean BMDomo1::SalvaConfig(){
 	}
 }
 
-boolean BMDomo1::LeeConfig(){
+boolean LeeConfig(){
 
 	// Sacar del fichero de configuracion, si existe, las configuraciones permanentes
 	if (SPIFFS.exists("/BMDomo1.json")) {
@@ -1005,16 +963,6 @@ boolean BMDomo1::LeeConfig(){
 
 	
 }
-
-#pragma endregion
-
-
-#pragma endregion
-
-// Objeto de la clase BMDomo1. Es necesario definirlo aqui debajo de la definicion de clase. No puedo en la region de arriba donde tengo los demas
-// Eso es porque la clase usa objetos de fuera. Esto es chapuza pero de momento asi no me lio. Despues todo por referencia y la clase esta debajo de los includes o en una libreria a parte. Asi esntonces estaria OK.
-BMDomo1 MiCupula(MECANICA_SENSOR_HOME);
-
 
 #pragma endregion
 
@@ -1129,7 +1077,7 @@ void onMqttConnect(bool sessionPresent) {
 	else{
 
 		// Si todo ha ido bien, proceso de inicio terminado.
-		MiCupula.ComOK = true;
+		ComOK = true;
 		Serial.print("** ");
 		Serial.print(clienteNTP.getFormattedTime());
 		Serial.println(" - SISTEMA INICIADO CORRECTAMENTE **");
@@ -1234,7 +1182,7 @@ void MandaTelemetria() {
 			ObjJson.set("TIPO","MQTT");
 			ObjJson.set("CMND","TELE");
 			ObjJson.set("MQTTT",t_topic);
-			ObjJson.set("RESP",MiCupula.MiEstadoJson(1));
+			ObjJson.set("RESP",MiEstadoJson(1));
 			
 			char JSONmessageBuffer[300];
 			ObjJson.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
@@ -1370,19 +1318,19 @@ void TaskProcesaComandos ( void * parameter ){
 
 						if (PAYLOAD == "TRUE"){
 
-							MiCupula.Connected(true);
+							Connected(true);
 
 						}
 							
 						else if (PAYLOAD == "FALSE"){
 
-							MiCupula.Connected(false);
+							Connected(false);
 
 						}
 
 						else if (PAYLOAD == "STATUS"){
 
-							MiCupula.Connected();
+							Connected();
 
 						}
 
@@ -1396,7 +1344,7 @@ void TaskProcesaComandos ( void * parameter ){
 
 						// Mover la cupula
 						// Vamos a tragar con decimales (XXX.XX) pero vamos a redondear a entero con la funcion round().
-						MiCupula.MoveTo(round(PAYLOAD.toFloat()));
+						MoveTo(round(PAYLOAD.toFloat()));
 						
 
 					}
@@ -1408,7 +1356,7 @@ void TaskProcesaComandos ( void * parameter ){
 						// Esto para la ejecucion unos 5 segundos maximo (si no tenemos seguridad de que todo esta parado) pero como estamos en una TASK para procesar los comandos
 						// no solo no importa sino que esta bien que no se procesen mas hasta que haya una respuesta de este
 						// comando ya que es muy importante.
-						MiCupula.AbortSlew();
+						AbortSlew();
 
 					}
 
@@ -1417,21 +1365,21 @@ void TaskProcesaComandos ( void * parameter ){
 					else if (COMANDO == "FindHome") {
 
 							
-						MiCupula.FindHome();
+						FindHome();
 						ledRojo.Pulsos(1500,500,1);
 
 					}
 					
 					else if (COMANDO == "SetPark"){
 
-						MiCupula.SetPark(PAYLOAD.toInt());
+						SetPark(PAYLOAD.toInt());
 						
 					}
 					
 
 					else if (COMANDO == "Park"){
 
-						MiCupula.Park();
+						Park();
 						
 					}
 
@@ -1439,13 +1387,13 @@ void TaskProcesaComandos ( void * parameter ){
 					// ##### COMANDOS FUERA DE ASCOM
 					else if (COMANDO == "InitHW") {
 
-						MiCupula.IniciaCupula(PAYLOAD);
+						IniciaCupula(PAYLOAD);
 
 					}
 
 					else if (COMANDO == "SetParkHere"){
 
-						MiCupula.SetPark(MiCupula.GetCurrentAzimut());
+						SetPark(GetCurrentAzimut());
 						
 					}
 
@@ -1458,26 +1406,26 @@ void TaskProcesaComandos ( void * parameter ){
 					else if (COMANDO == "SlewRelativeAzimut"){
 						
 						
-						if (!MiCupula.Slewing){
+						if (!Slewing){
 
 							long destino;
-							destino = (MiCupula.GetCurrentAzimut() + round(PAYLOAD.toFloat())) ;
+							destino = (GetCurrentAzimut() + round(PAYLOAD.toFloat())) ;
 
 							if(destino >=360 ){
 
-								MiCupula.MoveTo(destino - 360);
+								MoveTo(destino - 360);
 
 							}
 
 							else if(destino < 0){
 
-								MiCupula.MoveTo(destino + 360);
+								MoveTo(destino + 360);
 
 							}
 
 							else {
 
-								MiCupula.MoveTo(destino);
+								MoveTo(destino);
 
 							}
 
@@ -1639,7 +1587,7 @@ void TaskCupulaRun( void * parameter ){
 	
 	while(true){
 
-		MiCupula.Run();
+		RunCupula();
 
 		vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
@@ -1755,10 +1703,10 @@ void TaskGestionCuadro( void * parameter ){
 
 	while(true){
 
-		if (MiCupula.HardwareOK){
+		if (HardwareOK){
 			
 
-			if (MiCupula.Slewing){
+			if (Slewing){
 
 				if (ledAzul.EstadoLed == IndicadorLed::TipoEstadoLed::LED_ENCENDIDO){
 
@@ -1855,15 +1803,14 @@ void setup() {
 
 	Serial.println("-- Iniciando Controlador Azimut --");
 
+	InitObjCupula();
+
 	if (MODO_INSTALADOR){
 
 		Serial.println("ATENCION: MODO INSTALADOR ACTIVO");
 		Serial.println("FUNCIONALIDAD LIMITADA");
 
 	}
-
-	// Asignar funciones Callback de Micupula
-	MiCupula.SetRespondeComandoCallback(MandaRespuesta);
 
 	// Parametros para los botones
   	boton1.setDebounceTicks(50); // ms de debounce
@@ -1925,7 +1872,7 @@ void setup() {
 		}
 
 		// Leer configuracion salvada de la Cupula
-		MiCupula.LeeConfig();
+		LeeConfig();
 
 	}
 
