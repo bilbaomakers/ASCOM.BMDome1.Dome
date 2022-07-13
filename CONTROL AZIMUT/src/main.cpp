@@ -148,19 +148,12 @@ static const boolean MODO_INSTALADOR = false;
 
 #pragma region Delaraciones
 
-// Para la Cupula
+// VARIABLES
 bool Inicializando;							// Para saber que estamos ejecutando el comando INITHW
 bool BuscandoCasa;							// Para saber que estamos ejecutando el comando FINDHOME
 bool Aparcando;								// Para saber si estamos yendo a aparcar
 float TotalPasos;							// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
-Bounce Debouncer_HomeSwitch = Bounce(); 	// Objeto debouncer para el switch HOME
 bool HayQueSalvar;							// 
-long GradosToPasos(long grados);			// Convierte Grados a Pasos segun la mecanica
-long PasosToGrados(long pasos);		  		// Convierte pasos a grados segun la mecanica
-
-boolean SalvaConfig();
-
-//  Variables Publicas
 String HardwareInfo;						// Identificador del HardWare y Software
 bool ComOK;									// Si la wifi y la conexion MQTT esta OK
 bool DriverOK;								// Si estamos conectados al driver del PC y esta OK
@@ -169,8 +162,10 @@ bool Slewing;								// Si alguna parte del Domo esta moviendose
 bool AtHome;								// Si esta parada en HOME
 bool AtPark;								// Si esta en la posicion de PARK									
 int ParkPos;								// Para almacenar la posicion de Park en la clase
+// Para el sensor de temperatura de la CPU. Definir aqui asi necesario es por no estar en core Arduino.
+extern "C" {uint8_t temprature_sens_read();}
 
-// Funciones Publicas
+// FUNCIONES
 String MiEstadoJson(int categoria);			// Devuelve un JSON con los estados en un array de 100 chars (la libreria MQTT no puede con mas de 100)
 void MoveTo(int azimut);					// Mover la cupula a un azimut
 void IniciaCupula(String parametros);		// Inicializar la cupula
@@ -184,16 +179,20 @@ void AbortSlew();
 void SetPark(int l_ParkPos);
 void Park();
 boolean LeeConfig();
-		
+void MandaRespuesta(String comando, String payload);		
+long GradosToPasos(long grados);			// Convierte Grados a Pasos segun la mecanica
+long PasosToGrados(long pasos);		  		// Convierte pasos a grados segun la mecanica
+boolean SalvaConfig();
 
 
+// OBJETOS
+Bounce Debouncer_HomeSwitch = Bounce(); 	// Objeto debouncer para el switch HOME
 
 // Para la conexion MQTT
 AsyncMqttClient  clienteMqtt;
 
 // Controlador Stepper
 AccelStepper controladorStepper;
-
 
 // Los manejadores para las tareas. El resto de las cosas que hace nuestro controlador que son un poco mas flexibles que la de los pulsos del Stepper
 TaskHandle_t tHandleTaskCupulaRun,tHandleTaskProcesaComandos,tHandleTaskComandosSerieRun,tHandleTaskMandaTelemetria,tHandleTaskGestionRed,tHandleTaskEnviaRespuestas, tHandleTaskGestionCuadro;	
@@ -215,8 +214,7 @@ WiFiUDP udpNtp;
 // FALTA IMPLEMENTAR ALGO PARA CONFIGURAR LA ZONA HORARIA
 NTPClient clienteNTP(udpNtp, "europe.pool.ntp.org", HORA_LOCAL * 3600, 3600);
 
-// Para el sensor de temperatura de la CPU. Definir aqui asi necesario es por no estar en core Arduino.
-extern "C" {uint8_t temprature_sens_read();}
+
 
 // Cuado Mando
 
