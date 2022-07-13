@@ -5,6 +5,7 @@ ROM - 448Kb para boot y core
 SRAM - Static RAM - 520Kb
 8Kb de SRAM en RTC (Copro)
 
+
 Memoria externa ROM - SPI Flash (Antigua EEPROM)
 W25Q32: 32M-bit / 4M-byte (4,194,304)
 Usada habitualmente como memoria de programa, para OTA y sistema de ficheros SPIFFS, a particionar al gusto aunque para arduino en PlatformIO hay una por defecto.
