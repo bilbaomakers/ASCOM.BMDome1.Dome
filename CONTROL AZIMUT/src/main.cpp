@@ -108,7 +108,7 @@ static const uint8_t MECANICA_STEPPER_DIRPIN = 33;						// Pin de direccion del 
 static const uint8_t MECANICA_STEPPER_ENABLEPING = 32;				// Pin de enable del stepper
 static const short MECANICA_PASOS_POR_VUELTA_MOTOR = 400;		// Numero de pasos por vuelta del STEPPER (Configuracion del controlador)
 static const float MECANICA_STEPPER_MAXSPEED = (MECANICA_PASOS_POR_VUELTA_MOTOR * 5);	// Velocidad maxima del stepper (pasos por segundo)
-static const float MECANICA_STEPPER_MAXSPEED_INST = (MECANICA_PASOS_POR_VUELTA_MOTOR * 5);	// Velocidad maxima del stepper en modo instalador (pasos por segundo)
+static const float MECANICA_STEPPER_MAXSPEED_INST = (MECANICA_PASOS_POR_VUELTA_MOTOR * 2);	// Velocidad maxima del stepper en modo instalador (pasos por segundo)
 static const float MECANICA_STEPPER_MAXACELERATION = (MECANICA_STEPPER_MAXSPEED / 3);	// Aceleracion maxima del stepper (pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
 static const float MECANICA_STEPPER_MAXACELERATION_INST = (MECANICA_STEPPER_MAXSPEED_INST / 3);	// Aceleracion maxima del stepper modo instalador(pasos por segundo2). Aceleraremos al VMAX en 3 vueltas del motor.
 static const short MECANICA_RATIO_REDUCTORA = 6;							// Ratio de reduccion de la reductora
@@ -141,7 +141,7 @@ unsigned long TIEMPO_TICKER_RAPIDO = 500;
 static const int HORA_LOCAL = 2;
 
 // PARA MODO INSTALADOR. Para que la cupula tenga la funcionalidad reducida lo justo para el instalador
-static const boolean MODO_INSTALADOR = false;
+static const boolean MODO_INSTALADOR = true;
 
 
 #pragma endregion
@@ -410,7 +410,7 @@ void InitObjCupula() {
 	// Inicializacion del sensor de HOME
 	pinMode(MECANICA_SENSOR_HOME, INPUT_PULLUP);
 	Debouncer_HomeSwitch.attach(MECANICA_SENSOR_HOME);
-	Debouncer_HomeSwitch.interval(5);
+	Debouncer_HomeSwitch.interval(30);
 	// Inicializacion del sensor Seta Emergencia
 	pinMode(MECANICA_EMERGENCY_STOP, INPUT_PULLUP);
 	Debouncer_Emergency_Stop.attach(MECANICA_EMERGENCY_STOP);
@@ -510,6 +510,7 @@ void IniciaCupula(String parametros) {
 	if (emergencyStop){
 
 		ledRojo.Pulsos(1500,500,3);
+		MandaRespuesta("InitHW", "EMERG_ON");
 
 	}
 
@@ -587,7 +588,7 @@ void FindHome() {
 
 			// Pues aqui si que hay que movernos hasta que encontremos casa y pararnos.
 			// Aqui nos movemos (de momento a lo burro a dar media vuelta entera)
-			MoveTo(0);
+			MoveTo(180);
 
 			// Pero tenemos que salir de la funcion esta no podemos estar esperando a que de la vuelta asi que activo el flag para saber que "estoy buscando home" y termino
 			BuscandoCasa = true;
@@ -789,10 +790,11 @@ void Park(){
 
 void EmergencyStop(){
 
+	ledRojo.Pulsos(1500,500,3);
 	AbortSlew();
 	emergencyStop=true;
 	HardwareOK = false;
-	ledRojo.Pulsos(1500,500,3);
+	
 
 }
 
@@ -801,13 +803,13 @@ void RunCupula() {
 
 	// Actualizar la lectura de los switches
 	Debouncer_Emergency_Stop.update();
-	if(!Debouncer_Emergency_Stop.read()){
+	if(!Debouncer_Emergency_Stop.read() && !emergencyStop){
 
 		EmergencyStop();
 		
 	}
 
-	else{
+	else if (Debouncer_Emergency_Stop.read() && emergencyStop){
 
 		emergencyStop=false;
 
@@ -823,7 +825,7 @@ void RunCupula() {
 
 	if (Slewing) {
 
-		if (!Debouncer_HomeSwitch.read()) {
+		if (Debouncer_HomeSwitch.read()) {
 
 			// Actualizar la propiedad ATHome
 			AtHome = true;
@@ -831,7 +833,8 @@ void RunCupula() {
 			// Pero es que ademas si esta pulsado, nos estamos moviendo y estamos "buscando casa" .....
 			if (BuscandoCasa) {
 
-				controladorStepper.stop();					// Parar el motor que hemos llegado a HOME
+				//controladorStepper.stop();					// Parar el motor que hemos llegado a HOME
+				AbortSlew();
 				controladorStepper.setCurrentPosition(0);	// Poner la posicion a cero ("hacer cero")
 
 				// Aqui como tenemos aceleraciones va a tardar en parar y nos vamos a pasar de home un cacho (afortunadamente un cacho conocido)
@@ -845,6 +848,7 @@ void RunCupula() {
 
 					Inicializando = false;						// Cambiar la variable interna para saber que "ya no estamos inicializando, ya hemos terminado"
 					MandaRespuesta("InitHW", "READY");	// Responder al comando INITHW
+					HardwareOK=true;
 
 				}
 
