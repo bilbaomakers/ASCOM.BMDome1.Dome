@@ -162,6 +162,7 @@ bool Slewing;								// Si alguna parte del Domo esta moviendose
 bool AtHome;								// Si esta parada en HOME
 bool AtPark;								// Si esta en la posicion de PARK									
 int ParkPos;								// Para almacenar la posicion de Park en la clase
+bool emergencyStop;							// Para almacenar el estado de la seta de emergencia
 // Para el sensor de temperatura de la CPU. Definir aqui asi necesario es por no estar en core Arduino.
 extern "C" {uint8_t temprature_sens_read();}
 
@@ -183,10 +184,11 @@ void MandaRespuesta(String comando, String payload);
 long GradosToPasos(long grados);			// Convierte Grados a Pasos segun la mecanica
 long PasosToGrados(long pasos);		  		// Convierte pasos a grados segun la mecanica
 boolean SalvaConfig();
-
+void EmergencyStop();						// Parada de emergencia de la cupula
 
 // OBJETOS
 Bounce Debouncer_HomeSwitch = Bounce(); 	// Objeto debouncer para el switch HOME
+Bounce Debouncer_Emergency_Stop = Bounce(); 	// Objeto debouncer para la seta de emergencia
 
 // Para la conexion MQTT
 AsyncMqttClient  clienteMqtt;
@@ -214,10 +216,7 @@ WiFiUDP udpNtp;
 // FALTA IMPLEMENTAR ALGO PARA CONFIGURAR LA ZONA HORARIA
 NTPClient clienteNTP(udpNtp, "europe.pool.ntp.org", HORA_LOCAL * 3600, 3600);
 
-
-
 // Cuado Mando
-
 IndicadorLed ledRojo (MECANICA_LEDROJO, false);
 IndicadorLed ledVerde (MECANICA_LEDVERDE, false);
 IndicadorLed ledAzul (MECANICA_LEDAZUL, false);
@@ -225,8 +224,6 @@ OneButton boton1 (MECANICA_BOTONPANEL1,true,true);
 OneButton boton2 (MECANICA_BOTONPANEL2,true,true);
 OneButton boton3 (MECANICA_BOTONPANEL3,true,true);
 OneButton boton4 (MECANICA_BOTONPANEL4,true,true);
-
-
 
 #pragma endregion
 
@@ -410,12 +407,18 @@ void InitObjCupula() {
 	AtPark = false;
 	Aparcando = false;
 	TotalPasos = (float)(MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR) / (float)(MECANICA_DIENTES_PINON_ATAQUE);
-	// Inicializacion del sensor de HOMME
+	// Inicializacion del sensor de HOME
 	pinMode(MECANICA_SENSOR_HOME, INPUT_PULLUP);
 	Debouncer_HomeSwitch.attach(MECANICA_SENSOR_HOME);
 	Debouncer_HomeSwitch.interval(5);
+	// Inicializacion del sensor Seta Emergencia
+	pinMode(MECANICA_EMERGENCY_STOP, INPUT_PULLUP);
+	Debouncer_Emergency_Stop.attach(MECANICA_EMERGENCY_STOP);
+	Debouncer_Emergency_Stop.interval(5);
+
 	ParkPos = 0;
 	HayQueSalvar = false;
+	
 
 }
 
@@ -504,30 +507,41 @@ String MiEstadoJson(int categoria) {
 // Metodos (funciones). TODAS Salvo la RUN() deben ser ASINCRONAS. Jamas se pueden quedar uno esperando. Esperar a lo bobo ESTA PROHIBIDISISISISMO, tenemos MUCHAS cosas que hacer ....
 void IniciaCupula(String parametros) {
 
-	// Esto es para inicializar forzado si le pasamos parametro FORCE
-	if (parametros == "FORCE") {
+	if (emergencyStop){
 
-		HardwareOK = true;
-		MandaRespuesta("InitHW", "READY");
-		controladorStepper.enableOutputs();
-		
-	}
-
-	else if (parametros == "STD"){
-
-
-		Inicializando = true;
-
-		// Activar el motor. el resto del objeto Stepper ya esta OK
-		controladorStepper.enableOutputs();
-
-		// Como el metodo ahora mismo es dar toda la vuelta, hago cero. Si cambio el metodo esto no valdria.
-		controladorStepper.setCurrentPosition(0);
-
-		// Busca Home (Asyncrono)
-		FindHome();
+		ledRojo.Pulsos(1500,500,3);
 
 	}
+
+	else{
+
+		// Esto es para inicializar forzado si le pasamos parametro FORCE
+		if (parametros == "FORCE") {
+
+			HardwareOK = true;
+			MandaRespuesta("InitHW", "READY");
+			controladorStepper.enableOutputs();
+			
+		}
+
+		else if (parametros == "STD"){
+
+
+			Inicializando = true;
+
+			// Activar el motor. el resto del objeto Stepper ya esta OK
+			controladorStepper.enableOutputs();
+
+			// Como el metodo ahora mismo es dar toda la vuelta, hago cero. Si cambio el metodo esto no valdria.
+			controladorStepper.setCurrentPosition(0);
+
+			// Busca Home (Asyncrono)
+			FindHome();
+
+		}
+
+	}
+	
 
 	
 }
@@ -540,6 +554,7 @@ void FindHome() {
 	if (!HardwareOK && !Inicializando) {
 
 		MandaRespuesta("FindHome", "ERR_HNI");
+		ledRojo.Pulsos(1500,500,3);
 		
 	}
 	
@@ -772,11 +787,34 @@ void Park(){
 
 }
 
+void EmergencyStop(){
+
+	AbortSlew();
+	emergencyStop=true;
+	HardwareOK = false;
+	ledRojo.Pulsos(1500,500,3);
+
+}
+
 // Esta funcion se lanza desde el loop. Es la que hace las comprobaciones. No debe atrancarse nunca tampoco (ni esta ni ninguna)
 void RunCupula() {
 
 	// Actualizar la lectura de los switches
+	Debouncer_Emergency_Stop.update();
+	if(!Debouncer_Emergency_Stop.read()){
+
+		EmergencyStop();
+		
+	}
+
+	else{
+
+		emergencyStop=false;
+
+	}
+
 	Debouncer_HomeSwitch.update();
+	
 
 	// Una importante es actualizar la propiedad Slewing con el estado del motor paso a paso. 
 	Slewing = controladorStepper.isRunning();
@@ -1950,10 +1988,8 @@ void setup() {
 
 #pragma region Funcion Loop() de ARDUINO
 
-// Funcion LOOP de Arduino
+// Funcion LOOP de Arduino. Vacia. Todo en TASKS
 void loop() {
-		
-		//controladorStepper.run();
 	
 }
 
