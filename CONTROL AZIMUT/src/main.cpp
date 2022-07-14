@@ -1,5 +1,5 @@
  
- #pragma region COMENTARIOS
+#pragma region COMENTARIOS
 
 /*
 
@@ -146,23 +146,49 @@ static const boolean MODO_INSTALADOR = true;
 
 #pragma endregion
 
-#pragma region Delaraciones
+#pragma region DEFINICIONES
+
+enum TipoEstadoMecanica{
+
+	MEC_NOT_INIT,
+	MEC_INITIALIZING,
+	MEC_OK,
+	MEC_EMERGENCY,
+
+}estadoMecanica;
+
+enum TipoEstadoMovimiento {
+
+	MOV_BUSCANDOCASA,
+	MOV_APARCANDO,
+	MOV_OKSTOPPED,
+	MOV_OKSLEWING,
+	MOV_ERROR,
+
+}estadoMovimiento;
+
+enum TipoEstadoComunicaciones {
+
+	COM_OK,
+
+}estadoComunicaciones;
+
 
 // VARIABLES
-bool Inicializando;							// Para saber que estamos ejecutando el comando INITHW
-bool BuscandoCasa;							// Para saber que estamos ejecutando el comando FINDHOME
-bool Aparcando;								// Para saber si estamos yendo a aparcar
+//bool Inicializando;							// Para saber que estamos ejecutando el comando INITHW
+//bool BuscandoCasa;							// Para saber que estamos ejecutando el comando FINDHOME
+//bool Aparcando;								// Para saber si estamos yendo a aparcar
 float TotalPasos;							// Variable para almacenar al numero de pasos totales para 360º (0) al iniciar el objeto.
 bool HayQueSalvar;							// 
 String HardwareInfo;						// Identificador del HardWare y Software
 bool ComOK;									// Si la wifi y la conexion MQTT esta OK
 bool DriverOK;								// Si estamos conectados al driver del PC y esta OK
-bool HardwareOK;							// Si nosotros estamos listos para todo (para informar al driver del PC)
-bool Slewing;								// Si alguna parte del Domo esta moviendose
+//bool HardwareOK;							// Si nosotros estamos listos para todo (para informar al driver del PC)
+//bool Slewing;								// Si alguna parte del Domo esta moviendose
 bool AtHome;								// Si esta parada en HOME
 bool AtPark;								// Si esta en la posicion de PARK									
 int ParkPos;								// Para almacenar la posicion de Park en la clase
-bool emergencyStop;							// Para almacenar el estado de la seta de emergencia
+//bool emergencyStop;							// Para almacenar el estado de la seta de emergencia
 // Para el sensor de temperatura de la CPU. Definir aqui asi necesario es por no estar en core Arduino.
 extern "C" {uint8_t temprature_sens_read();}
 
@@ -397,15 +423,19 @@ class ConfigClass{
 void InitObjCupula() {	
 
 	HardwareInfo = "BMDome1.HWAz.1.0";
-	Inicializando = false;
+	//Inicializando = false;
 	ComOK = false;
 	DriverOK = false;
-	HardwareOK = false;
-	Slewing = false;			
-	BuscandoCasa = false;
+	//HardwareOK = false;
+	//Slewing = false;			
+	//BuscandoCasa = false;
 	AtHome = false;
 	AtPark = false;
-	Aparcando = false;
+	//Aparcando = false;
+
+	estadoMecanica=MEC_NOT_INIT;
+	estadoMovimiento=MOV_ERROR;
+
 	TotalPasos = (float)(MECANICA_DIENTES_CREMALLERA_CUPULA * MECANICA_RATIO_REDUCTORA * MECANICA_PASOS_POR_VUELTA_MOTOR) / (float)(MECANICA_DIENTES_PINON_ATAQUE);
 	// Inicializacion del sensor de HOME
 	pinMode(MECANICA_SENSOR_HOME, INPUT_PULLUP);
@@ -418,7 +448,6 @@ void InitObjCupula() {
 
 	ParkPos = 0;
 	HayQueSalvar = false;
-	
 
 }
 
@@ -507,19 +536,22 @@ String MiEstadoJson(int categoria) {
 // Metodos (funciones). TODAS Salvo la RUN() deben ser ASINCRONAS. Jamas se pueden quedar uno esperando. Esperar a lo bobo ESTA PROHIBIDISISISISMO, tenemos MUCHAS cosas que hacer ....
 void IniciaCupula(String parametros) {
 
-	if (emergencyStop){
-
+	switch (estadoMecanica)
+	{
+	case MEC_EMERGENCY:
 		ledRojo.Pulsos(1500,500,3);
-		MandaRespuesta("InitHW", "EMERG_ON");
+		MandaRespuesta("InitHW", "ERR_EMERG");
+		break;
 
-	}
+	case MEC_OK:
+		MandaRespuesta("InitHW", "READY");
+		break;
 
-	else{
+	case MEC_NOT_INIT:
 
-		// Esto es para inicializar forzado si le pasamos parametro FORCE
 		if (parametros == "FORCE") {
 
-			HardwareOK = true;
+			estadoMecanica=MEC_OK;
 			MandaRespuesta("InitHW", "READY");
 			controladorStepper.enableOutputs();
 			
@@ -528,7 +560,8 @@ void IniciaCupula(String parametros) {
 		else if (parametros == "STD"){
 
 
-			Inicializando = true;
+			//Inicializando = true;
+			estadoMecanica=MEC_INITIALIZING;
 
 			// Activar el motor. el resto del objeto Stepper ya esta OK
 			controladorStepper.enableOutputs();
@@ -540,61 +573,86 @@ void IniciaCupula(String parametros) {
 			FindHome();
 
 		}
+		break;
 
+	default:
+		break;
 	}
-	
-
 	
 }
 
 // Funcion que da orden de mover la cupula para esperar HOME.
 void FindHome() {
 
-	
-	// Si la cupula no esta inicializada no hacemos nada mas que avisar
-	if (!HardwareOK && !Inicializando) {
 
+	switch (estadoMecanica){
+
+	case MEC_NOT_INIT:
 		MandaRespuesta("FindHome", "ERR_HNI");
 		ledRojo.Pulsos(1500,500,3);
+		break;
 		
-	}
-	
-	else {
+	case MEC_EMERGENCY:
+		MandaRespuesta("FindHome", "ERR_EME");
+		ledRojo.Pulsos(1500,500,3);
+		break;
 
-	
-		// Primero Verificar si estamos en Home y parados porque entonces estanteria hacer na si ya esta todo hecho .....
-		if (!Slewing && AtHome) {
+	case MEC_INITIALIZING: case MEC_OK:
 
-			// Caramba ya estamos en Home y Parados No tenemos que hacer nada
-			MandaRespuesta("FindHome", "ATHOME");
-			return;
+			switch (estadoMovimiento)
+			{
+				case MOV_OKSLEWING:
+					MandaRespuesta("FindHome", "ERR_SLW");
+					ledRojo.Pulsos(1500,500,3);
+					break;
+				
+				case MOV_BUSCANDOCASA:
+					MandaRespuesta("FindHome", "ERR_FH");
+					ledRojo.Pulsos(1500,500,3);
+					break;
 
-		}
+				case MOV_APARCANDO:
+					MandaRespuesta("FindHome", "ERR_PRK");
+					ledRojo.Pulsos(1500,500,3);
+					break;
 
-		// Si doy esta orden pero la cupula se esta moviendo .......
-		else if (Slewing) {
+				case MOV_OKSTOPPED:
 
-		
-			// Que nos estamos moviendo leñe no atosigues .....
-			MandaRespuesta("FindHome", "ERR_SLW");
-			return;
+					if (AtHome) {
 
-		}
-	
-		// Y si estamos parados y NO en Home .....
-		else if (!Slewing && !AtHome){
+						// Caramba ya estamos en Home y Parados No tenemos que hacer nada
+						MandaRespuesta("FindHome", "ATHOME");
+						break;
 
-			MandaRespuesta("FindHome", "CMD_OK");
+					}
 
-			// Pues aqui si que hay que movernos hasta que encontremos casa y pararnos.
-			// Aqui nos movemos (de momento a lo burro a dar media vuelta entera)
-			MoveTo(180);
+					else{
 
-			// Pero tenemos que salir de la funcion esta no podemos estar esperando a que de la vuelta asi que activo el flag para saber que "estoy buscando home" y termino
-			BuscandoCasa = true;
-	
-		}
+						MandaRespuesta("FindHome", "CMD_OK");
 
+						// Pues aqui si que hay que movernos hasta que encontremos casa y pararnos.
+						// Aqui nos movemos (de momento a lo burro a dar media vuelta entera)
+						MoveTo(180);
+
+						// Pero tenemos que salir de la funcion esta no podemos estar esperando a que de la vuelta asi que activo el flag para saber que "estoy buscando home" y termino
+						estadoMovimiento=MOV_BUSCANDOCASA;
+
+					}
+					break;
+
+				default:
+					MandaRespuesta("FindHome", "ERR_NA");
+					ledRojo.Pulsos(1500,500,3);
+					break;
+					break;
+			}
+
+		break;
+
+	default:
+		MandaRespuesta("FindHome", "ERR_NA");
+		ledRojo.Pulsos(1500,500,3);
+		break;
 	}
 
 }
@@ -636,73 +694,88 @@ long GetCurrentAzimut() {
 void MoveTo(int grados) {
 
 
-	// Si la cupula no esta inicializada no hacemos nada mas que avisar
-	if (!HardwareOK && !Inicializando) {
+	switch (estadoMecanica){
 
-		// Error Hardware Not Init
-		MandaRespuesta("SlewToAZimut", "ERR_HNI");
-		ledRojo.Pulsos(1500,500,3);
-		
-	}
-
-	else if (Slewing) {
-
-
-		MandaRespuesta("SlewToAZimut", "ERR_SLW");
-
-	}
-
-	else {
-
-		// Verificar que los grados no estan fuera de rango
-		if (grados >= 0 && grados <= 359) {
+		case MEC_NOT_INIT:
+			MandaRespuesta("SlewToAZimut", "ERR_HNI");
+			ledRojo.Pulsos(1500,500,3);
+			break;
 			
-			// Si es aqui el comando es OK, nos movemos.
+		case MEC_EMERGENCY:
+			MandaRespuesta("SlewToAZimut", "ERR_EME");
+			ledRojo.Pulsos(1500,500,3);
+			break;
 
-			// movimiento relativo a realiar
-			int delta = (grados - GetCurrentAzimut());
-			
-			
-			// Aqui el algoritmo para movernos con las opciones que tenemos de la libreria del Stepper (que no esta pensada para un "anillo" como es la cupula)
-			
-			int amover = 0;
-			
+		case MEC_INITIALIZING: case MEC_OK:
 
-			if (delta >= -180 && delta <= 180) {
+			switch (estadoMovimiento){
 
-				amover = delta;
-			
-			}
-
-			else if (delta > 180) {
-
-				amover = delta - 360;
-
-			}
-			
-			else if (delta < 180) {
-
-				amover = delta + 360;
+				case MOV_OKSLEWING:
+					MandaRespuesta("SlewToAZimut", "ERR_SLW");
+					ledRojo.Pulsos(1500,500,3);
+					break;
 				
+				case MOV_OKSTOPPED: case MOV_BUSCANDOCASA: case MOV_APARCANDO:
+
+					// Verificar que los grados no estan fuera de rango
+					if (grados >= 0 && grados <= 359) {
+						
+						// Si es aqui el comando es OK, nos movemos.
+						// movimiento relativo a realiar
+						int delta = (grados - GetCurrentAzimut());
+										
+						// Aqui el algoritmo para movernos con las opciones que tenemos de la libreria del Stepper (que no esta pensada para un "anillo" como es la cupula)
+						
+						int amover = 0;
+						
+
+						if (delta >= -180 && delta <= 180) {
+
+							amover = delta;
+						
+						}
+
+						else if (delta > 180) {
+
+							amover = delta - 360;
+
+						}
+						
+						else if (delta < 180) {
+
+							amover = delta + 360;
+							
+						}
+						
+						MandaRespuesta("SlewToAZimut", "CMD_OK");
+
+						if(estadoMovimiento==MOV_OKSTOPPED){
+
+							estadoMovimiento=MOV_OKSLEWING;
+								
+						}
+
+						controladorStepper.move(GradosToPasos(amover));
+						
+					}
+			
+					break;
+
+				default:
+					MandaRespuesta("SlewToAZimut", "ERR_NA");
+					ledRojo.Pulsos(1500,500,3);
+					break;
+					break;
 			}
-			
-			MandaRespuesta("SlewToAZimut", "CMD_OK");
-			
-			controladorStepper.move(GradosToPasos(amover));
-				
 
 
-		}
+			break;
 
-		else {
-			
-			MandaRespuesta("SlewToAZimut", "ERR_OR");
-
-		}
-		
-
+		default:
+			MandaRespuesta("SlewToAZimut", "ERR_NA");
+			ledRojo.Pulsos(1500,500,3);
+			break;
 	}
-	
 
 }
 
@@ -728,7 +801,7 @@ void AbortSlew(){
 
 	// Implementar despues la parte del Shutter tambien.
 
-	if (Slewing){
+	if (estadoMovimiento!=MOV_OKSTOPPED && estadoMovimiento!=MOV_ERROR){
 
 		MandaRespuesta("AbortSlew", "CMD_OK");
 		ledRojo.Pulsos(500,500,2);
@@ -742,11 +815,8 @@ void AbortSlew(){
 
 			if (controladorStepper.isRunning() == false){
 
-				// Por si hemos parado estando aparcando o buscando casa
-				Aparcando = false;
-				BuscandoCasa = false;
-
-				// Responder OK.
+				
+				estadoMovimiento=MOV_OKSTOPPED;
 				MandaRespuesta("AbortSlew", "STOPPED");
 				return;
 
@@ -755,9 +825,11 @@ void AbortSlew(){
 			// Esto, que es KAKA, aqui no importa, que la Task Procesacomandos se espere que esto es importante
 			delay(1000);
 
-	}
+		}
 
 	MandaRespuesta("AbortSlew", "ERR");
+	estadoMovimiento=MOV_ERROR;
+	estadoMecanica=MEC_NOT_INIT;
 	
 	}
 }
@@ -784,7 +856,7 @@ void Park(){
 
 	AbortSlew();
 	MoveTo(ParkPos);
-	Aparcando = true;
+	estadoMovimiento=MOV_APARCANDO;
 
 }
 
@@ -792,133 +864,75 @@ void EmergencyStop(){
 
 	ledRojo.Pulsos(1500,500,3);
 	AbortSlew();
-	emergencyStop=true;
-	HardwareOK = false;
-	
+	estadoMovimiento=MOV_ERROR;
+	estadoMecanica=MEC_EMERGENCY;
 
 }
 
 // Esta funcion se lanza desde el loop. Es la que hace las comprobaciones. No debe atrancarse nunca tampoco (ni esta ni ninguna)
 void RunCupula() {
 
-	// Actualizar la lectura de los switches
+	// SWITCH DE EMERGENCIA. MANDA MAS QUE NADIE
 	Debouncer_Emergency_Stop.update();
-	if(!Debouncer_Emergency_Stop.read() && !emergencyStop){
+	if(!Debouncer_Emergency_Stop.read() && estadoMecanica!=MEC_EMERGENCY){
 
 		EmergencyStop();
 		
 	}
-
-	else if (Debouncer_Emergency_Stop.read() && emergencyStop){
-
-		emergencyStop=false;
-
-	}
-
-	Debouncer_HomeSwitch.update();
 	
+	// Lectura del sensor de HOME
+	Debouncer_HomeSwitch.update();
+	AtHome=Debouncer_HomeSwitch.read();
 
-	// Una importante es actualizar la propiedad Slewing con el estado del motor paso a paso. 
-	Slewing = controladorStepper.isRunning();
+	// AQUI HACER NUEVA MAQUINA DE ESTADO
+	switch (estadoMovimiento){
+			
+		case MOV_APARCANDO:
+			/* code */
+			break;
+		
+		case MOV_BUSCANDOCASA:
+			
+			if(AtHome){
 
-	// Algunas cosas que hacemos en funcion si nos estamos moviendo o no
-
-	if (Slewing) {
-
-		if (Debouncer_HomeSwitch.read()) {
-
-			// Actualizar la propiedad ATHome
-			AtHome = true;
-
-			// Pero es que ademas si esta pulsado, nos estamos moviendo y estamos "buscando casa" .....
-			if (BuscandoCasa) {
-
-				//controladorStepper.stop();					// Parar el motor que hemos llegado a HOME
 				AbortSlew();
 				controladorStepper.setCurrentPosition(0);	// Poner la posicion a cero ("hacer cero")
-
-				// Aqui como tenemos aceleraciones va a tardar en parar y nos vamos a pasar de home un cacho (afortunadamente un cacho conocido)
-				// Tendremos que volver para atras despacio el cacho que nos hemos pasado del Switch. Hay que hacer el calculo.
-
-
-				BuscandoCasa = false;							// Cambiar el flag interno para saber que "ya no estamos buscando casa, ya hemos llegado"
 				MandaRespuesta("FindHome", "ATHOME");		// Responder al comando FINDHOME
+							
+				if(estadoMecanica==MEC_INITIALIZING){
 
-				if (Inicializando) {							// Si ademas estabamos haciendo esto desde el comando INITHW ....
-
-					Inicializando = false;						// Cambiar la variable interna para saber que "ya no estamos inicializando, ya hemos terminado"
-					MandaRespuesta("InitHW", "READY");	// Responder al comando INITHW
-					HardwareOK=true;
+						MandaRespuesta("InitHW", "READY");	// Responder al comando INITHW
+						estadoMecanica=MEC_OK;
 
 				}
 
 			}
-
-		}
-
-		// Y si no esta pulsado .....
-		else
-		{
-			// Actualizamos la propiedad AtHome
-			AtHome = false;
-
-		}
-
-	}
-
-	// Esto es si estamos parados
-	else {
-
-		// Salvar config si hay que salvar
-		// Esto hago asi porque si estamos moviendo el motor me salta un panic al acceder al SPIFFS
-		// Esto sera por un tema de interrupciones
-		if (HayQueSalvar){
-
-			SalvaConfig();
-			HayQueSalvar = false;
-
-		}
+			
+			/* code */
+			break;
 		
+		case MOV_OKSLEWING:
+			/* code */
+			break;
 
-		// Si la posicion del stepper en el objeto de su libreria esta fuera de rangos y estoy parado corregir
-		if (controladorStepper.currentPosition() > TotalPasos || controladorStepper.currentPosition() < 0) {
+		case MOV_OKSTOPPED:
+			if (HayQueSalvar){
 
-			controladorStepper.setCurrentPosition(GradosToPasos(GetCurrentAzimut()));
+				SalvaConfig();
+				HayQueSalvar = false;
 
-		}
-
-		// Actualizar la propiedad AtPark si estamos parados en el azimut del Park
-		if (GetCurrentAzimut() == ParkPos){
-			
-			AtPark = true;
-
-			if (Aparcando == true){
-
-				HardwareOK = false;
-				Aparcando = false;
-				MandaRespuesta("Park","PRK_DONE");
-			
 			}
+			
+			// Si la posicion del stepper en el objeto de su libreria esta fuera de rangos y estoy parado corregir
+			if (controladorStepper.currentPosition() > TotalPasos || controladorStepper.currentPosition() < 0) {
 
-		}
+				controladorStepper.setCurrentPosition(GradosToPasos(GetCurrentAzimut()));
 
-		else{
+			}
+			break;
 
-			AtPark = false;
-
-		}
-
-	}
-
-		
-	// Otra cosa a comprobar es si estamos buscando home y el motor se ha parado sin llegar a hacer lo de arriba
-	// Un supuesto raro, pero eso es que no hemos conseguido detectar el switch home
-	if (!Slewing && BuscandoCasa) {
-
-		MandaRespuesta("FindHome", "ERR_HSF");
-		BuscandoCasa = false;
-		Inicializando = false;
-				
+		default:
+			break;
 	}
 
 }
